@@ -1,26 +1,199 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
 
+/* ─── Design tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-cream: #FAF9F6;
+  --color-cream-dark: #F3F0E8;
+  --color-gold: #C9A84C;
+  --color-gold-light: #E2C97E;
+  --color-gold-dark: #A8893A;
+  --color-olive: #6B7C5C;
+  --color-olive-light: #8A9C75;
+  --color-text: #2C2C2C;
+  --color-text-muted: #7A7A7A;
+  --color-border: #E8E2D9;
+  --color-white: #FFFFFF;
+  --color-error: #C84B4B;
+  --color-success: #4B7C5C;
+
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.10), 0 4px 12px rgba(0, 0, 0, 0.06);
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ─── Base reset ─────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  background-color: var(--color-cream);
+  color: var(--color-text);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ─── Typography helpers ──────────────────────────────────────────────────────── */
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif);
+  line-height: 1.25;
+  color: var(--color-text);
+}
+
+a {
+  color: var(--color-gold);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--color-gold-dark);
+}
+
+/* ─── Utility: Gold button ───────────────────────────────────────────────────── */
+.btn-gold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background-color: var(--color-gold);
+  color: var(--color-white);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  padding: 0.7rem 1.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+  text-decoration: none;
+}
+
+.btn-gold:hover {
+  background-color: var(--color-gold-dark);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-white);
+}
+
+.btn-gold:active {
+  transform: translateY(1px);
+}
+
+.btn-gold:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ─── Utility: Ghost button ──────────────────────────────────────────────────── */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.btn-ghost:hover {
+  border-color: var(--color-gold-light);
+  color: var(--color-gold-dark);
+  background: rgba(201, 168, 76, 0.04);
+}
+
+/* ─── Card ───────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 2rem;
+}
+
+/* ─── Form controls ──────────────────────────────────────────────────────────── */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.form-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.form-input {
+  background: var(--color-cream);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.9rem;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--color-text);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  width: 100%;
+}
+
+.form-input:focus {
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.12);
+}
+
+.form-input::placeholder {
+  color: #B8B2A8;
+}
+
+/* ─── Alert / error message ──────────────────────────────────────────────────── */
+.alert-error {
+  background: rgba(200, 75, 75, 0.08);
+  border: 1px solid rgba(200, 75, 75, 0.25);
+  border-radius: var(--radius-sm);
+  color: var(--color-error);
+  font-size: 0.875rem;
+  padding: 0.65rem 1rem;
+}
+
+/* ─── Animations ─────────────────────────────────────────────────────────────── */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
