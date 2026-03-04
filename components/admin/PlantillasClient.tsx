@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import {
     updatePlantillaFase,
     createPlantillaFase,
@@ -11,6 +12,8 @@ import {
     deletePlantillaTarea,
     reorderPlantillaFases,
     reorderPlantillaTareas,
+    createCustomPlantilla,
+    deleteCustomPlantilla,
 } from '@/app/(admin)/plantillas/actions'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -49,13 +52,20 @@ const TIPO_LABELS: Record<string, string> = {
 
 export function PlantillasClient({
     fasesPorTipo,
+    customTipos = [],
 }: {
     fasesPorTipo: Record<string, PlantillaFase[]>
+    customTipos?: { value: string; label: string }[]
 }) {
     const [tipoSeleccionado, setTipoSeleccionado] = useState('boda')
     const [fases, setFases] = useState<PlantillaFase[]>(fasesPorTipo['boda'] ?? [])
     const [globalError, setGlobalError] = useState<string | null>(null)
     const [, startReorder] = useTransition()
+    const [showNewModal, setShowNewModal] = useState(false)
+    const [newNombre, setNewNombre] = useState('')
+    const [creating, setCreating] = useState(false)
+    const [localCustomTipos, setLocalCustomTipos] = useState(customTipos)
+    const [confirmDeleteCustom, setConfirmDeleteCustom] = useState<string | null>(null)
 
     function changeTipo(tipo: string) {
         setTipoSeleccionado(tipo)
@@ -65,6 +75,39 @@ export function PlantillasClient({
 
     function reloadNeeded() {
         window.location.reload()
+    }
+
+    async function handleCreateCustom() {
+        const nombre = newNombre.trim()
+        if (!nombre) return
+        setCreating(true)
+        const res = await createCustomPlantilla(nombre)
+        setCreating(false)
+        if ('error' in res && res.error) {
+            setGlobalError(res.error)
+        } else {
+            setShowNewModal(false)
+            setNewNombre('')
+            // Reload to pick up the new tipo from the server
+            window.location.reload()
+        }
+    }
+
+    async function handleDeleteCustom(tipo: string) {
+        setConfirmDeleteCustom(tipo)
+    }
+
+    async function executeDeleteCustom() {
+        const tipo = confirmDeleteCustom
+        if (!tipo) return
+        setConfirmDeleteCustom(null)
+        const res = await deleteCustomPlantilla(tipo) as { success?: boolean; error?: string }
+        if (res.error) {
+            setGlobalError(res.error)
+        } else {
+            setLocalCustomTipos((prev) => prev.filter((t) => t.value !== tipo))
+            if (tipoSeleccionado === tipo) changeTipo('boda')
+        }
     }
 
     // ── Drag end handler ──────────────────────────────────────────────────────
@@ -151,7 +194,79 @@ export function PlantillasClient({
                         {t.label}
                     </button>
                 ))}
+
+                {/* Custom template tabs */}
+                {localCustomTipos.map((t) => (
+                    <div key={t.value} style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
+                        <button
+                            onClick={() => changeTipo(t.value)}
+                            style={{
+                                ...st.typeBtn,
+                                ...(tipoSeleccionado === t.value ? st.typeBtnActive : {}),
+                                borderTopRightRadius: 0,
+                                borderBottomRightRadius: 0,
+                                borderRight: 'none',
+                            }}
+                        >
+                            {t.label}
+                        </button>
+                        <button
+                            onClick={() => handleDeleteCustom(t.value)}
+                            title="Eliminar plantilla"
+                            style={{
+                                ...st.typeBtn,
+                                borderTopLeftRadius: 0,
+                                borderBottomLeftRadius: 0,
+                                color: 'var(--color-error)',
+                                padding: '0.4rem 0.5rem',
+                                ...(tipoSeleccionado === t.value ? st.typeBtnActive : {}),
+                            }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+                ))}
+
+                {/* New template button */}
+                <button
+                    onClick={() => setShowNewModal(true)}
+                    style={{ ...st.typeBtn, borderStyle: 'dashed', color: 'var(--color-gold)' }}
+                >
+                    + Nueva
+                </button>
             </div>
+
+            {/* New template modal */}
+            {showNewModal && (
+                <div style={st.modalOverlay} onClick={() => setShowNewModal(false)}>
+                    <div style={st.modal} onClick={(e) => e.stopPropagation()}>
+                        <h3 style={st.modalTitle}>Nueva plantilla</h3>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
+                            Dale un nombre descriptivo a tu plantilla custom.
+                        </p>
+                        <input
+                            className="form-input"
+                            placeholder="Ej: Despedida de Soltera"
+                            value={newNombre}
+                            onChange={(e) => setNewNombre(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleCreateCustom()}
+                            autoFocus
+                            style={{ marginBottom: '1rem' }}
+                        />
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                            <button
+                                className="btn-ghost"
+                                onClick={() => { setShowNewModal(false); setNewNombre('') }}
+                            >Cancelar</button>
+                            <button
+                                className="btn-primary"
+                                onClick={handleCreateCustom}
+                                disabled={creating || !newNombre.trim()}
+                            >{creating ? 'Creando…' : 'Crear plantilla'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Info banner */}
             <div style={st.infoBanner}>
@@ -211,6 +326,17 @@ export function PlantillasClient({
                 onError={setGlobalError}
                 onMutated={reloadNeeded}
             />
+
+            {/* Confirm delete custom plantilla modal */}
+            <ConfirmModal
+                isOpen={confirmDeleteCustom !== null}
+                title="¿Eliminar plantilla?"
+                message="Esta acción eliminará todas las fases y tareas asociadas. No se puede deshacer."
+                confirmLabel="Eliminar"
+                danger
+                onConfirm={executeDeleteCustom}
+                onCancel={() => setConfirmDeleteCustom(null)}
+            />
         </div>
     )
 }
@@ -236,6 +362,7 @@ function FaseEditor({
     const [nombre, setNombre] = useState(fase.nombre)
     const [descripcion, setDescripcion] = useState(fase.descripcion ?? '')
     const [isPending, startTransition] = useTransition()
+    const [showDeleteModal, setShowDeleteModal] = useState(false)
 
     function saveFase() {
         startTransition(async () => {
@@ -246,7 +373,11 @@ function FaseEditor({
     }
 
     function handleDelete() {
-        if (!confirm(`¿Eliminar la fase "${fase.nombre}" y todas sus tareas?`)) return
+        setShowDeleteModal(true)
+    }
+
+    function executeDelete() {
+        setShowDeleteModal(false)
         startTransition(async () => {
             const res = await deletePlantillaFase(fase.id)
             if (res?.error) onError(res.error)
@@ -353,6 +484,17 @@ function FaseEditor({
                 </Droppable>
                 <AddTareaForm faseId={fase.id} onError={onError} onMutated={onMutated} />
             </div>
+
+            {/* Confirm delete fase modal */}
+            <ConfirmModal
+                isOpen={showDeleteModal}
+                title="¿Eliminar fase?"
+                message={`Se eliminarán la fase "${fase.nombre}" y todas sus tareas. Esta acción no se puede deshacer.`}
+                confirmLabel="Eliminar"
+                danger
+                onConfirm={executeDelete}
+                onCancel={() => setShowDeleteModal(false)}
+            />
         </div>
     )
 }
@@ -565,4 +707,7 @@ const st: Styles = {
     iconBtn: { fontSize: '0.7rem', padding: '0.2rem 0.45rem', flexShrink: 0 },
     smallBtn: { fontSize: '0.78rem', padding: '0.35rem 0.75rem' },
     emptyFases: { padding: '2rem', textAlign: 'center' },
+    modalOverlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 },
+    modal: { backgroundColor: 'white', borderRadius: 'var(--radius)', padding: '2rem', width: '100%', maxWidth: '400px', boxShadow: '0 8px 40px rgba(0,0,0,0.18)', display: 'flex', flexDirection: 'column', gap: '0.75rem' },
+    modalTitle: { fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 600, color: 'var(--color-text)' },
 }

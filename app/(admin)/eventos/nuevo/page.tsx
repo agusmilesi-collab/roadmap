@@ -11,6 +11,24 @@ export default async function NuevoEventoPage() {
         .select('id, nombre, email, telefono, foto_url, bio_corta, created_at')
         .order('nombre')
 
+    // Fetch distinct custom plantillas
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: customFases } = await (supabase as any)
+        .from('plantillas_fases')
+        .select('tipo_evento, nombre_display')
+        .eq('es_custom', true)
+        .order('nombre_display')
+
+    type CustomFaseRow = { tipo_evento: string; nombre_display: string | null }
+    const seenCustom = new Set<string>()
+    const customTipos: { value: string; label: string }[] = []
+    for (const f of (customFases ?? []) as CustomFaseRow[]) {
+        if (!seenCustom.has(f.tipo_evento)) {
+            seenCustom.add(f.tipo_evento)
+            customTipos.push({ value: f.tipo_evento, label: f.nombre_display ?? f.tipo_evento })
+        }
+    }
+
     return (
         <main style={styles.main}>
             <div style={styles.container}>
@@ -33,7 +51,7 @@ export default async function NuevoEventoPage() {
 
                 {/* Form card */}
                 <div className="card" style={styles.formCard}>
-                    <NuevoEventoForm planners={(planners ?? []) as Planner[]} />
+                    <NuevoEventoForm planners={(planners ?? []) as Planner[]} customTipos={customTipos} />
                 </div>
             </div>
         </main>

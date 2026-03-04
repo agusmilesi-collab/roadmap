@@ -33,7 +33,10 @@ export default function LoginPage() {
             <div style={styles.container}>
                 {/* Logo / brand */}
                 <div style={styles.brand}>
-                    <img src="/logo.svg" alt="TMP Eventos" style={{ height: '64px', width: 'auto', marginBottom: '0.5rem' }} />
+                    <img src="/logo.svg" alt="TMP Eventos" style={{ height: '64px', width: 'auto', marginBottom: '0.25rem' }} />
+                    <h1 style={styles.brandName}>
+                        <span style={styles.brandIcon}>✦</span> TMP Eventos
+                    </h1>
                     <p style={styles.brandTagline}>Panel de gestión</p>
                 </div>
 

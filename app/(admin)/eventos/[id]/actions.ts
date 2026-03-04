@@ -157,6 +157,23 @@ export async function deleteTarea(id: string, eventoId: string) {
     revalidate(eventoId)
 }
 
+export async function reorderFases(eventoId: string, items: { id: string; orden: number }[]) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    await Promise.all(items.map(({ id, orden }) => db.from('fases').update({ orden }).eq('id', id)))
+    revalidate(eventoId)
+}
+
+export async function reorderTareas(eventoId: string, items: { id: string; orden: number }[]) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    await Promise.all(items.map(({ id, orden }) => db.from('tareas').update({ orden }).eq('id', id)))
+    revalidate(eventoId)
+}
+
+
 // ─── Acuerdos ─────────────────────────────────────────────────────────────────
 
 export async function createAcuerdo(

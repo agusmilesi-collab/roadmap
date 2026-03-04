@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { DragDropContext, Droppable, Draggable, type DropResult, type DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
 import type { Fase, Tarea, Acuerdo } from './EventoDetailClient'
 import {
     createFaseEnPosicion,
     updateFase, deleteFase,
     createTarea, updateTarea, deleteTarea,
     createAcuerdo, deleteAcuerdo,
+    reorderFases, reorderTareas,
 } from '@/app/(admin)/eventos/[id]/actions'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -29,46 +31,113 @@ const ESTADO_STYLES: Record<string, React.CSSProperties> = {
     completada: { backgroundColor: 'rgba(34,197,94,0.12)', color: '#16A34A' },
 }
 
+const TODAY_ADMIN = new Date()
+TODAY_ADMIN.setHours(0, 0, 0, 0)
+
+function isVencida(tarea: Tarea): boolean {
+    if (tarea.completada) return false
+    if (!tarea.fecha) return false
+    return new Date(tarea.fecha + 'T12:00:00') < TODAY_ADMIN
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function ProgresoTab({ fases, eventoId }: { fases: Fase[]; eventoId: string }) {
+export function ProgresoTab({ fases: initialFases, eventoId }: { fases: Fase[]; eventoId: string }) {
+    const [fases, setFases] = useState<Fase[]>(initialFases)
     const [expandedTareaId, setExpandedTareaId] = useState<string | null>(null)
     const [addTareaFaseId, setAddTareaFaseId] = useState<string | null>(null)
     const [editingFaseId, setEditingFaseId] = useState<string | null>(null)
     const [showAddFase, setShowAddFase] = useState(false)
+    const [, startReorder] = useTransition()
+
+    function handleDragEnd(result: DropResult) {
+        const { destination, source, type } = result
+        if (!destination) return
+        if (destination.droppableId === source.droppableId && destination.index === source.index) return
+
+        if (type === 'FASE') {
+            const reordered = Array.from(fases)
+            const [moved] = reordered.splice(source.index, 1)
+            reordered.splice(destination.index, 0, moved)
+            const withOrden = reordered.map((f, i) => ({ ...f, orden: i + 1 }))
+            setFases(withOrden)
+            startReorder(async () => {
+                await reorderFases(eventoId, withOrden.map((f) => ({ id: f.id, orden: f.orden })))
+            })
+        } else if (type.startsWith('TAREA_')) {
+            const faseId = source.droppableId
+            const faseIdx = fases.findIndex((f) => f.id === faseId)
+            if (faseIdx === -1) return
+            const fase = fases[faseIdx]
+            const tareas = Array.from(fase.tareas)
+            const [moved] = tareas.splice(source.index, 1)
+            tareas.splice(destination.index, 0, moved)
+            const tareasConOrden = tareas.map((t, i) => ({ ...t, orden: i + 1 }))
+            const newFases = [...fases]
+            newFases[faseIdx] = { ...fase, tareas: tareasConOrden }
+            setFases(newFases)
+            startReorder(async () => {
+                await reorderTareas(eventoId, tareasConOrden.map((t) => ({ id: t.id, orden: t.orden })))
+            })
+        }
+    }
+
+    function reloadNeeded() { window.location.reload() }
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {fases.length === 0 && (
-                <div className="card" style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-                    Sin fases aún. Agregá la primera fase abajo.
-                </div>
-            )}
+        <DragDropContext onDragEnd={handleDragEnd}>
+            <Droppable droppableId="fases-list" type="FASE">
+                {(provided) => (
+                    <div ref={provided.innerRef} {...provided.droppableProps}
+                        style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+                    >
+                        {fases.length === 0 && (
+                            <div className="card" style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+                                Sin fases aún. Agregá la primera fase abajo.
+                            </div>
+                        )}
 
-            {fases.map((fase) => (
-                <FaseCard
-                    key={fase.id}
-                    fase={fase}
-                    eventoId={eventoId}
-                    expandedTareaId={expandedTareaId}
-                    setExpandedTareaId={setExpandedTareaId}
-                    isAddingTarea={addTareaFaseId === fase.id}
-                    onToggleAddTarea={() => setAddTareaFaseId(addTareaFaseId === fase.id ? null : fase.id)}
-                    isEditing={editingFaseId === fase.id}
-                    onToggleEdit={() => setEditingFaseId(editingFaseId === fase.id ? null : fase.id)}
-                />
-            ))}
+                        {fases.map((fase, index) => (
+                            <Draggable key={fase.id} draggableId={fase.id} index={index}>
+                                {(drag, snapshot) => (
+                                    <div
+                                        ref={drag.innerRef}
+                                        {...drag.draggableProps}
+                                        style={{ ...drag.draggableProps.style, opacity: snapshot.isDragging ? 0.85 : 1 }}
+                                    >
+                                        <FaseCard
+                                            fase={fase}
+                                            eventoId={eventoId}
+                                            expandedTareaId={expandedTareaId}
+                                            setExpandedTareaId={setExpandedTareaId}
+                                            isAddingTarea={addTareaFaseId === fase.id}
+                                            onToggleAddTarea={() => setAddTareaFaseId(addTareaFaseId === fase.id ? null : fase.id)}
+                                            isEditing={editingFaseId === fase.id}
+                                            onToggleEdit={() => setEditingFaseId(editingFaseId === fase.id ? null : fase.id)}
+                                            dragHandleProps={drag.dragHandleProps}
+                                            onReloadNeeded={reloadNeeded}
+                                        />
+                                    </div>
+                                )}
+                            </Draggable>
+                        ))}
+                        {provided.placeholder}
+                    </div>
+                )}
+            </Droppable>
 
             {/* Add Fase */}
-            {showAddFase ? (
-                <AddFaseForm eventoId={eventoId} onDone={() => setShowAddFase(false)} fasesExistentes={fases} />
-            ) : (
-                <button className="btn-ghost" style={styles.addFaseBtn} onClick={() => setShowAddFase(true)}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                    Agregar fase
-                </button>
-            )}
-        </div>
+            <div style={{ marginTop: '0.5rem' }}>
+                {showAddFase ? (
+                    <AddFaseForm eventoId={eventoId} onDone={() => setShowAddFase(false)} fasesExistentes={fases} />
+                ) : (
+                    <button className="btn-ghost" style={styles.addFaseBtn} onClick={() => setShowAddFase(true)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        Agregar fase
+                    </button>
+                )}
+            </div>
+        </DragDropContext>
     )
 }
 
@@ -77,12 +146,15 @@ export function ProgresoTab({ fases, eventoId }: { fases: Fase[]; eventoId: stri
 function FaseCard({
     fase, eventoId, expandedTareaId, setExpandedTareaId,
     isAddingTarea, onToggleAddTarea, isEditing, onToggleEdit,
+    dragHandleProps, onReloadNeeded,
 }: {
     fase: Fase; eventoId: string
     expandedTareaId: string | null
     setExpandedTareaId: (id: string | null) => void
     isAddingTarea: boolean; onToggleAddTarea: () => void
     isEditing: boolean; onToggleEdit: () => void
+    dragHandleProps: DraggableProvidedDragHandleProps | null | undefined
+    onReloadNeeded: () => void
 }) {
     const [isPending, startTransition] = useTransition()
     const [confirmDelete, setConfirmDelete] = useState(false)
@@ -108,6 +180,10 @@ function FaseCard({
         <div className="card" style={styles.faseCard}>
             {/* Fase header */}
             <div style={styles.faseHeader}>
+                {/* Drag handle */}
+                <div {...(dragHandleProps as object)} style={styles.faseDragHandle} title="Arrastrar para reordenar">
+                    ⠿
+                </div>
                 {isEditing ? (
                     <div style={styles.faseEditRow}>
                         <input value={editNombre} onChange={e => setEditNombre(e.target.value)} className="form-input" style={{ fontSize: '0.95rem', flex: 1 }} placeholder="Nombre de fase" />
@@ -145,26 +221,36 @@ function FaseCard({
                 )}
             </div>
 
-            {/* Tareas */}
+            {/* Tareas — draggable */}
             {fase.tareas.length > 0 && (
-                <div style={styles.tareasList}>
-                    {[...fase.tareas]
-                        .sort((a, b) => {
-                            if (!a.fecha && !b.fecha) return 0
-                            if (!a.fecha) return 1
-                            if (!b.fecha) return -1
-                            return a.fecha.localeCompare(b.fecha)
-                        })
-                        .map((tarea) => (
-                            <TareaRow
-                                key={tarea.id}
-                                tarea={tarea}
-                                eventoId={eventoId}
-                                isExpanded={expandedTareaId === tarea.id}
-                                onToggle={() => setExpandedTareaId(expandedTareaId === tarea.id ? null : tarea.id)}
-                            />
-                        ))}
-                </div>
+                <Droppable droppableId={fase.id} type={`TAREA_${fase.id}`}>
+                    {(provided) => (
+                        <div ref={provided.innerRef} {...provided.droppableProps} style={styles.tareasList}>
+                            {[...fase.tareas]
+                                .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+                                .map((tarea, tIdx) => (
+                                    <Draggable key={tarea.id} draggableId={tarea.id} index={tIdx}>
+                                        {(tdrag, tsnap) => (
+                                            <div
+                                                ref={tdrag.innerRef}
+                                                {...tdrag.draggableProps}
+                                                style={{ ...tdrag.draggableProps.style, opacity: tsnap.isDragging ? 0.85 : 1 }}
+                                            >
+                                                <TareaRow
+                                                    tarea={tarea}
+                                                    eventoId={eventoId}
+                                                    isExpanded={expandedTareaId === tarea.id}
+                                                    onToggle={() => setExpandedTareaId(expandedTareaId === tarea.id ? null : tarea.id)}
+                                                    dragHandleProps={tdrag.dragHandleProps}
+                                                />
+                                            </div>
+                                        )}
+                                    </Draggable>
+                                ))}
+                            {provided.placeholder}
+                        </div>
+                    )}
+                </Droppable>
             )}
 
             {/* Add Tarea */}
@@ -182,24 +268,36 @@ function FaseCard({
 
 // ─── TareaRow ─────────────────────────────────────────────────────────────────
 
-function TareaRow({ tarea, eventoId, isExpanded, onToggle }: {
+function TareaRow({ tarea, eventoId, isExpanded, onToggle, dragHandleProps }: {
     tarea: Tarea; eventoId: string; isExpanded: boolean; onToggle: () => void;
-    isLast?: boolean
+    dragHandleProps?: DraggableProvidedDragHandleProps | null
 }) {
+    const vencida = isVencida(tarea)
     return (
-        <div style={{ ...styles.tareaRow, borderColor: isExpanded ? 'var(--color-gold)' : 'var(--color-border)' }}>
+        <div style={{ ...styles.tareaRow, borderColor: isExpanded ? 'var(--color-gold)' : vencida ? 'rgba(239,68,68,0.3)' : 'var(--color-border)' }}>
+            {/* Drag handle for tarea */}
+            {dragHandleProps && (
+                <div {...dragHandleProps} style={styles.tareaDragHandle} title="Arrastrar para reordenar">
+                    ⠿
+                </div>
+            )}
             {/* Summary row (always visible) */}
             <button onClick={onToggle} style={styles.tareaRowBtn}>
                 <span style={styles.tareaIcon}>{TIPO_ICONS[tarea.tipo] ?? '📌'}</span>
                 <span style={{
                     ...styles.tareaNombre,
-                    color: tarea.estado === 'completada' ? 'var(--color-text-muted)' : 'var(--color-text)',
+                    color: tarea.completada ? 'var(--color-text-muted)' : vencida ? '#EF4444' : 'var(--color-text)',
+                    textDecoration: tarea.completada ? 'line-through' : 'none',
                 }}>{tarea.nombre}</span>
-                <span style={{ ...styles.estadoBadge, ...ESTADO_STYLES[tarea.estado] }}>
-                    {ESTADO_OPTIONS.find(o => o.value === tarea.estado)?.label ?? tarea.estado}
-                </span>
+                {vencida ? (
+                    <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.06em', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.1)', padding: '0.1rem 0.45rem', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0 }}>VENCIDA</span>
+                ) : (
+                    <span style={{ ...styles.estadoBadge, ...ESTADO_STYLES[tarea.estado] }}>
+                        {ESTADO_OPTIONS.find(o => o.value === tarea.estado)?.label ?? tarea.estado}
+                    </span>
+                )}
                 {tarea.fecha && (
-                    <span style={styles.tareaFecha}>
+                    <span style={{ ...styles.tareaFecha, color: vencida ? '#EF4444' : 'var(--color-text-muted)' }}>
                         {new Date(tarea.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })}
                     </span>
                 )}
@@ -463,16 +561,18 @@ function AddFaseForm({ eventoId, onDone, fasesExistentes }: { eventoId: string; 
 
 const styles: Record<string, React.CSSProperties> = {
     faseCard: { padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0' },
-    faseHeader: { marginBottom: '0.75rem' },
-    faseEditRow: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' },
-    faseTitleRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' },
+    faseHeader: { marginBottom: '0.75rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' },
+    faseDragHandle: { cursor: 'grab', fontSize: '1.1rem', color: 'var(--color-text-muted)', paddingTop: '0.15rem', flexShrink: 0, userSelect: 'none', opacity: 0.5, lineHeight: 1 },
+    tareaDragHandle: { cursor: 'grab', fontSize: '0.9rem', color: 'var(--color-text-muted)', padding: '0 0.4rem 0 0.6rem', display: 'flex', alignItems: 'center', flexShrink: 0, userSelect: 'none', opacity: 0.4 },
+    faseEditRow: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', flex: 1 },
+    faseTitleRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', flex: 1 },
     faseNombre: { fontFamily: 'var(--font-serif)', fontSize: '1.05rem', fontWeight: 600, color: 'var(--color-text)' },
     faseDesc: { fontSize: '0.82rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' },
     faseMeta: { display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0 },
     faseCounter: { fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', background: 'var(--color-cream-dark)', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap' },
     tareasList: { display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.75rem' },
-    tareaRow: { border: '1px solid', borderRadius: 'var(--radius-sm)', overflow: 'hidden', backgroundColor: 'var(--color-white)', transition: 'border-color 0.2s' },
-    tareaRowBtn: { display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%', padding: '0.65rem 0.85rem', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' },
+    tareaRow: { border: '1px solid', borderRadius: 'var(--radius-sm)', overflow: 'hidden', backgroundColor: 'var(--color-white)', transition: 'border-color 0.2s', display: 'flex', alignItems: 'stretch' },
+    tareaRowBtn: { display: 'flex', alignItems: 'center', gap: '0.6rem', flex: 1, padding: '0.65rem 0.85rem 0.65rem 0', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' },
     tareaIcon: { fontSize: '1rem', flexShrink: 0 },
     tareaNombre: { fontSize: '0.88rem', fontWeight: 500, color: 'var(--color-text)', flex: 1 },
     estadoBadge: { fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap' },

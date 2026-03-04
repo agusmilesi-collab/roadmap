@@ -28,6 +28,23 @@ function formatFechaLarga(fechaStr: string): string {
     })
 }
 
+// ─── Helper: compute effective visual state ───────────────────────────────────
+
+const TODAY = new Date()
+TODAY.setHours(0, 0, 0, 0)
+
+type TareaVisualState = 'completada' | 'vencida' | 'en_curso' | 'pendiente'
+
+function getVisualState(tarea: Tarea): TareaVisualState {
+    if (tarea.completada) return 'completada'
+    if (tarea.fecha) {
+        const d = new Date(tarea.fecha + 'T12:00:00')
+        if (d < TODAY) return 'vencida'
+    }
+    if (tarea.estado === 'en_curso' || tarea.estado === 'en_proceso') return 'en_curso'
+    return 'pendiente'
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ProgresoClienteTab({ fases }: Props) {
@@ -40,8 +57,12 @@ export function ProgresoClienteTab({ fases }: Props) {
             {fases.map((fase) => {
                 const total = fase.tareas.length
                 const completadas = fase.tareas.filter((t) => t.completada).length
-                // Sort by fecha ascending (nulls last)
+                const hasVencida = fase.tareas.some(
+                    (t) => !t.completada && t.fecha && new Date(t.fecha + 'T12:00:00') < TODAY
+                )
+                // Sort by orden asc, then fecha asc (nulls last)
                 const tareasOrdenadas = [...fase.tareas].sort((a, b) => {
+                    if (a.orden !== b.orden) return (a.orden ?? 0) - (b.orden ?? 0)
                     if (!a.fecha && !b.fecha) return 0
                     if (!a.fecha) return 1
                     if (!b.fecha) return -1
@@ -59,12 +80,17 @@ export function ProgresoClienteTab({ fases }: Props) {
                                 )}
                             </div>
                             <div style={st.faseCounter}>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                <span style={{ fontSize: '0.75rem', color: hasVencida ? '#EF4444' : 'var(--color-text-muted)' }}>
                                     {completadas}/{total} tareas
+                                    {hasVencida && <span style={{ marginLeft: 4, fontWeight: 700 }}>· con vencidas</span>}
                                 </span>
                                 {total > 0 && (
                                     <div style={st.miniBar}>
-                                        <div style={{ ...st.miniBarFill, width: `${Math.round((completadas / total) * 100)}%` }} />
+                                        <div style={{
+                                            ...st.miniBarFill,
+                                            width: `${Math.round((completadas / total) * 100)}%`,
+                                            backgroundColor: hasVencida ? '#EF4444' : 'var(--color-olive)',
+                                        }} />
                                     </div>
                                 )}
                             </div>
@@ -77,6 +103,7 @@ export function ProgresoClienteTab({ fases }: Props) {
                                     key={tarea.id}
                                     tarea={tarea}
                                     isLast={idx === tareasOrdenadas.length - 1}
+                                    nextState={idx < tareasOrdenadas.length - 1 ? getVisualState(tareasOrdenadas[idx + 1]) : null}
                                 />
                             ))}
                         </div>
@@ -91,14 +118,23 @@ export function ProgresoClienteTab({ fases }: Props) {
 
 type Tarea = EventoCliente['fases'][number]['tareas'][number]
 
-function TareaRow({ tarea, isLast }: { tarea: Tarea; isLast: boolean }) {
+function TareaRow({ tarea, isLast, nextState }: { tarea: Tarea; isLast: boolean; nextState: TareaVisualState | null }) {
     const [expanded, setExpanded] = useState(false)
     const hasDetail = tarea.resumen || (tarea.acuerdos && tarea.acuerdos.length > 0)
 
-    const isCompleted = tarea.completada
-    const isInProgress = tarea.estado === 'en_curso' || tarea.estado === 'en_proceso'
+    const visualState = getVisualState(tarea)
+    const isCompleted = visualState === 'completada'
+    const isVencida = visualState === 'vencida'
+    const isInProgress = visualState === 'en_curso'
 
     const fecha = tarea.fecha ? formatFechaLarga(tarea.fecha) : null
+
+    // Connector line color = based on the NEXT task's state
+    const lineColor = nextState === 'completada'
+        ? '#7C8B70'
+        : nextState === 'vencida'
+            ? '#EF4444'
+            : 'var(--color-border)'
 
     return (
         <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -108,19 +144,16 @@ function TareaRow({ tarea, isLast }: { tarea: Tarea; isLast: boolean }) {
                 <div style={st.timelineCircle}>
                     {isCompleted
                         ? <CompletedIcon />
-                        : isInProgress
-                            ? <InProgressIcon />
-                            : <PendingIcon />
+                        : isVencida
+                            ? <VencidaIcon />
+                            : isInProgress
+                                ? <InProgressIcon />
+                                : <PendingIcon />
                     }
                 </div>
                 {/* Vertical line — only between items */}
                 {!isLast && (
-                    <div style={{
-                        ...st.timelineLine,
-                        backgroundColor: isCompleted
-                            ? 'var(--color-olive)'
-                            : 'var(--color-border)',
-                    }} />
+                    <div style={{ ...st.timelineLine, backgroundColor: lineColor }} />
                 )}
             </div>
 
@@ -134,14 +167,17 @@ function TareaRow({ tarea, isLast }: { tarea: Tarea; isLast: boolean }) {
                     <span style={st.tipoIcon}>{TIPO_ICON[tarea.tipo ?? ''] ?? '•'}</span>
                     <span style={{
                         ...st.tareaNombre,
-                        color: isCompleted ? 'var(--color-text-muted)' : 'var(--color-text)',
-                        fontStyle: isCompleted ? 'normal' : 'normal',
+                        color: isCompleted ? 'var(--color-text-muted)' : isVencida ? '#EF4444' : 'var(--color-text)',
+                        textDecoration: isCompleted ? 'line-through' : 'none',
                     }}>
                         {tarea.nombre}
                     </span>
 
                     <span style={st.tareasRight}>
-                        {fecha && <span style={st.tareaFecha}>{fecha}</span>}
+                        {isVencida && (
+                            <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.06em', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.1)', padding: '0.1rem 0.45rem', borderRadius: '20px', whiteSpace: 'nowrap' }}>VENCIDA</span>
+                        )}
+                        {fecha && <span style={{ ...st.tareaFecha, color: isVencida ? '#EF4444' : 'var(--color-text-muted)' }}>{fecha}</span>}
                         {hasDetail && (
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
                                 style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: 'var(--color-text-muted)' }}>
@@ -182,6 +218,16 @@ function TareaRow({ tarea, isLast }: { tarea: Tarea; isLast: boolean }) {
 }
 
 // ─── Status icon components ───────────────────────────────────────────────────
+
+function VencidaIcon() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="11" fill="#EF4444" />
+            <line x1="8" y1="8" x2="16" y2="16" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
+            <line x1="16" y1="8" x2="8" y2="16" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
+        </svg>
+    )
+}
 
 function CompletedIcon() {
     return (

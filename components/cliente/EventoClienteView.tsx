@@ -97,6 +97,9 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
 
                 {/* ─── Header ────────────────────────────────────────── */}
                 <header style={st.header}>
+                    {/* Logo */}
+                    <img src="/logo.svg" alt="TMP Eventos" style={{ height: '56px', width: 'auto', marginBottom: '0.5rem' }} />
+
                     {/* Ornament */}
                     <p style={st.ornament}>✦</p>
 

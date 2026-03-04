@@ -7,6 +7,7 @@ import type { Planner, TipoEvento } from '@/lib/types'
 
 interface NuevoEventoFormProps {
     planners: Planner[]
+    customTipos?: { value: string; label: string }[]
 }
 
 const TIPOS: { value: TipoEvento; label: string }[] = [
@@ -16,7 +17,7 @@ const TIPOS: { value: TipoEvento; label: string }[] = [
     { value: 'baby_shower', label: 'Baby Shower' },
 ]
 
-export function NuevoEventoForm({ planners }: NuevoEventoFormProps) {
+export function NuevoEventoForm({ planners, customTipos = [] }: NuevoEventoFormProps) {
     const [isPending, startTransition] = useTransition()
     const router = useRouter()
 
@@ -58,11 +59,22 @@ export function NuevoEventoForm({ planners }: NuevoEventoFormProps) {
                     style={styles.select}
                 >
                     <option value="">— Seleccioná un tipo —</option>
-                    {TIPOS.map((t) => (
-                        <option key={t.value} value={t.value}>
-                            {t.label}
-                        </option>
-                    ))}
+                    <optgroup label="Tipos base">
+                        {TIPOS.map((t) => (
+                            <option key={t.value} value={t.value}>
+                                {t.label}
+                            </option>
+                        ))}
+                    </optgroup>
+                    {customTipos.length > 0 && (
+                        <optgroup label="Plantillas custom">
+                            {customTipos.map((t) => (
+                                <option key={t.value} value={t.value}>
+                                    {t.label}
+                                </option>
+                            ))}
+                        </optgroup>
+                    )}
                 </select>
             </div>
 

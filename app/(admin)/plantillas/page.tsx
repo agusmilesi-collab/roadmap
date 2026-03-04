@@ -4,17 +4,17 @@ import { PlantillasClient } from '@/components/admin/PlantillasClient'
 
 export const metadata = { title: 'Plantillas — TMP Eventos' }
 
-const TIPOS = ['boda', 'quince', 'cumple', 'baby_shower']
+const TIPOS_BASE = ['boda', 'quince', 'cumple', 'baby_shower']
 
 export default async function PlantillasPage() {
     const supabase = await createServerSupabaseClient()
 
-    // Fetch all plantillas_fases with their tareas for all tipos at once
+    // Fetch all plantillas_fases with their tareas (base + custom)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: allFasesRaw } = await (supabase as any)
         .from('plantillas_fases')
         .select(`
-            id, nombre, descripcion, orden, tipo_evento,
+            id, nombre, descripcion, orden, tipo_evento, es_custom, nombre_display,
             plantillas_tareas ( id, nombre, tipo, meses_antes, orden )
         `)
         .order('orden')
@@ -22,16 +22,16 @@ export default async function PlantillasPage() {
     type PlantillaFaseRow = {
         id: string; nombre: string; descripcion: string | null
         orden: number; tipo_evento: string
+        es_custom: boolean | null; nombre_display: string | null
         plantillas_tareas: { id: string; nombre: string; tipo: string | null; meses_antes: number | null; orden: number }[]
     }
     const allFases = (allFasesRaw ?? []) as PlantillaFaseRow[]
 
-    // Group by tipo_evento and deduplicate by nombre+orden (guard against bad DB data)
-    const fasesPorTipo: Record<string, { id: string; nombre: string; descripcion: string | null; orden: number; tareas: { id: string; nombre: string; tipo: string | null; meses_antes: number | null; orden: number }[] }[]> = {}
+    type FaseForClient = { id: string; nombre: string; descripcion: string | null; orden: number; tareas: { id: string; nombre: string; tipo: string | null; meses_antes: number | null; orden: number }[] }
 
-    for (const tipo of TIPOS) {
+    function buildFasesForTipo(tipo: string): FaseForClient[] {
         const seenKeys = new Set<string>()
-        fasesPorTipo[tipo] = allFases
+        return allFases
             .filter((f) => {
                 if (f.tipo_evento !== tipo) return false
                 const key = `${f.nombre}__${f.orden}`
@@ -48,6 +48,22 @@ export default async function PlantillasPage() {
             }))
     }
 
+    // Build fasesPorTipo for base tipos
+    const fasesPorTipo: Record<string, FaseForClient[]> = {}
+    for (const tipo of TIPOS_BASE) {
+        fasesPorTipo[tipo] = buildFasesForTipo(tipo)
+    }
+
+    // Discover custom tipos (es_custom = true), deduplicated by tipo_evento
+    const seenCustomTipos = new Set<string>()
+    const customTipos: { value: string; label: string }[] = []
+    for (const f of allFases) {
+        if (f.es_custom && !seenCustomTipos.has(f.tipo_evento)) {
+            seenCustomTipos.add(f.tipo_evento)
+            customTipos.push({ value: f.tipo_evento, label: f.nombre_display ?? f.tipo_evento })
+            fasesPorTipo[f.tipo_evento] = buildFasesForTipo(f.tipo_evento)
+        }
+    }
 
     return (
         <main style={st.main}>
@@ -72,7 +88,7 @@ export default async function PlantillasPage() {
                     Editá las fases y tareas base por tipo de evento. Estos cambios se aplican solo a eventos futuros.
                 </p>
 
-                <PlantillasClient fasesPorTipo={fasesPorTipo} />
+                <PlantillasClient fasesPorTipo={fasesPorTipo} customTipos={customTipos} />
             </div>
         </main>
     )

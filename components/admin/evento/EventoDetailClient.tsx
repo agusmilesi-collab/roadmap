@@ -72,6 +72,9 @@ const TIPO_COLORS: Record<string, string> = {
 
 // ─── Segmented progress bar ───────────────────────────────────────────────────
 
+const TODAY_BAR = new Date()
+TODAY_BAR.setHours(0, 0, 0, 0)
+
 function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
     if (fases.length === 0) return null
     return (
@@ -82,17 +85,22 @@ function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
                     const total = fase.tareas.length
                     const done = fase.tareas.filter((t) => t.completada).length
                     const pct = total === 0 ? 0 : Math.round((done / total) * 100)
+                    const hasVencida = fase.tareas.some(
+                        (t) => !t.completada && t.fecha && new Date(t.fecha + 'T12:00:00') < TODAY_BAR
+                    )
                     const bg = total === 0
                         ? 'var(--color-cream-dark)'
-                        : pct === 100
-                            ? 'var(--color-olive)'
-                            : pct > 0
-                                ? 'var(--color-gold)'
-                                : 'var(--color-cream-dark)'
+                        : hasVencida
+                            ? '#EF4444'
+                            : pct === 100
+                                ? 'var(--color-olive)'
+                                : pct > 0
+                                    ? 'var(--color-gold)'
+                                    : 'var(--color-cream-dark)'
                     return (
                         <div
                             key={fase.id}
-                            title={`${fase.nombre}: ${pct}%`}
+                            title={`${fase.nombre}: ${pct}%${hasVencida ? ' ⚠ con tareas vencidas' : ''}`}
                             style={{ flex: 1, backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden', position: 'relative' }}
                         >
                             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, backgroundColor: bg, borderRadius: '99px', transition: 'width 0.3s ease, background-color 0.3s ease' }} />

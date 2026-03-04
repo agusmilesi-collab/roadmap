@@ -95,7 +95,8 @@ export default async function DashboardPage() {
                 {/* Header */}
                 <div style={styles.header}>
                     <div style={styles.headerLeft}>
-                        <img src="/logo.svg" alt="TMP Eventos" style={{ height: '40px', width: 'auto' }} />
+                        <span style={styles.headerIcon}>✦</span>
+                        <h1 style={styles.title}>TMP Eventos</h1>
                     </div>
                     <form action={signOut}>
                         <button type="submit" className="btn-ghost" style={styles.signOutBtn}>

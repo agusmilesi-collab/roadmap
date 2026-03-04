@@ -133,3 +133,56 @@ export async function reorderPlantillaTareas(items: { id: string; orden: number 
     revalidatePath('/plantillas')
     return { success: true }
 }
+
+// ─── Create custom plantilla ──────────────────────────────────────────────────
+
+export async function createCustomPlantilla(nombre: string) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+
+    // Build a URL-safe slug from the display name
+    const slug = nombre
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip accents
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_|_$/g, '')
+    const tipo_evento = `custom_${slug}_${Date.now()}`
+
+    // Insert a seed fase so the tipo_evento exists and is discoverable
+    const { error } = await db.from('plantillas_fases').insert({
+        tipo_evento,
+        nombre: 'Primera fase',
+        descripcion: null,
+        orden: 1,
+        es_custom: true,
+        nombre_display: nombre,
+    })
+
+    if (error) return { error: error.message }
+    revalidatePath('/plantillas')
+    return { success: true, tipo_evento, nombre_display: nombre }
+}
+
+// ─── Delete custom plantilla (all its fases + tareas) ────────────────────────
+
+export async function deleteCustomPlantilla(tipo_evento: string) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+
+    // Fetch all fase IDs for this tipo
+    const { data: fases } = await db
+        .from('plantillas_fases')
+        .select('id')
+        .eq('tipo_evento', tipo_evento)
+
+    if (fases && fases.length > 0) {
+        const ids = fases.map((f: { id: string }) => f.id)
+        await db.from('plantillas_tareas').delete().in('plantilla_fase_id', ids)
+        await db.from('plantillas_fases').delete().in('id', ids)
+    }
+
+    revalidatePath('/plantillas')
+    return { success: true }
+}
