@@ -7,11 +7,38 @@ interface Props {
     params: Promise<{ id: string }>
 }
 
+interface EventoDetailRow {
+    id: string
+    nombre: string
+    tipo_evento: string
+    fecha_evento: string
+    presupuesto_usd: number | null
+    tipo_cambio: number | null
+    token_acceso: string
+    planner_id: string | null
+    planners: { nombre: string; email: string; telefono: string | null } | null
+    fases: {
+        id: string; nombre: string; descripcion: string | null; orden: number
+        tareas: {
+            id: string; nombre: string; fecha: string | null; estado: string
+            tipo: string | null; resumen: string | null; completada: boolean; orden: number
+            acuerdos: { id: string; texto: string; created_at: string }[]
+        }[]
+    }[]
+    rubros: {
+        id: string; nombre: string; estado: string; proveedor: string | null
+        monto_original: number | null; moneda: string; tipo_cambio_propio: number | null
+        sena_pct: number | null; fecha_decision: string | null; fecha_sena: string | null
+        notas: string | null; orden: number
+    }[]
+}
+
 export default async function EventoDetailPage({ params }: Props) {
     const { id } = await params
     const supabase = await createServerSupabaseClient()
 
-    const { data: evento } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: eventoRaw } = await (supabase as any)
         .from('eventos')
         .select(`
       id,
@@ -38,6 +65,7 @@ export default async function EventoDetailPage({ params }: Props) {
         .eq('id', id)
         .single()
 
+    const evento = eventoRaw as EventoDetailRow | null
     if (!evento) notFound()
 
     // Sort fases and tasks by orden, dedup by id (guard against duplicate DB rows)
@@ -59,11 +87,12 @@ export default async function EventoDetailPage({ params }: Props) {
         ? (evento.planners as { nombre: string; email: string; telefono: string | null })
         : null
 
-    const allPlanners = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allPlanners = await (supabase as any)
         .from('planners')
         .select('id, nombre')
         .order('nombre')
-        .then((r) => r.data ?? [])
+        .then((r: { data: { id: string; nombre: string }[] | null }) => r.data ?? [])
 
     return (
         <main style={styles.main}>
@@ -75,6 +104,7 @@ export default async function EventoDetailPage({ params }: Props) {
             </div>
 
             <EventoDetailClient
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 evento={{
                     id: evento.id,
                     nombre: evento.nombre,
@@ -84,11 +114,13 @@ export default async function EventoDetailPage({ params }: Props) {
                     tipo_cambio: evento.tipo_cambio,
                     token_acceso: evento.token_acceso,
                     planner,
-                    fases: fasesConTareas,
-                    rubros: rubrosSorted,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    fases: fasesConTareas as any,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    rubros: rubrosSorted as any,
                 }}
                 allPlanners={allPlanners}
-                plannerId={(evento as { planner_id?: string | null }).planner_id ?? null}
+                plannerId={evento.planner_id ?? null}
             />
         </main>
     )

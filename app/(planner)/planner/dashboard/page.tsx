@@ -17,12 +17,15 @@ export default async function PlannerDashboardPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) redirect('/login')
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+
     // Find planner record by user_id
-    const { data: planner } = await supabase
+    const { data: planner } = await db
         .from('planners')
         .select('id, nombre')
         .eq('user_id', user.id)
-        .maybeSingle()
+        .maybeSingle() as { data: { id: string; nombre: string } | null }
 
     if (!planner) {
         // Planner account not linked yet — show a friendly message
@@ -56,7 +59,8 @@ export default async function PlannerDashboardPage() {
     }
 
     // Fetch only events assigned to this planner
-    const { data: eventos } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: eventos } = await (supabase as any)
         .from('eventos')
         .select(`
       id,
@@ -75,13 +79,21 @@ export default async function PlannerDashboardPage() {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const eventosConStats: EventoConStats[] = (eventos ?? []).map((e) => {
+    type EventoRow = {
+        id: string; nombre: string; tipo_evento: string; fecha_evento: string
+        token_acceso: string
+        planners: { nombre: string } | null
+        fases: { tareas: { id: string; completada: boolean }[] | null }[] | null
+    }
+    const eventosList = (eventos ?? []) as EventoRow[]
+
+    const eventosConStats: EventoConStats[] = eventosList.map((e) => {
         const fechaEvento = new Date(e.fecha_evento + 'T12:00:00')
         const diasRestantes = Math.round(
             (fechaEvento.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
         )
         const todasTareas = (e.fases ?? []).flatMap(
-            (f: { tareas?: { id: string; completada: boolean }[] }) => f.tareas ?? []
+            (f) => f.tareas ?? []
         )
         const totalTareas = todasTareas.length
         const tareasCompletadas = todasTareas.filter(

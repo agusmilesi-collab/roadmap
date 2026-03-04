@@ -11,11 +11,12 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { token } = await params
     const supabase = await createServerSupabaseClient()
-    const { data } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
         .from('eventos')
         .select('nombre, tipo_evento')
         .eq('token_acceso', token)
-        .single()
+        .single() as { data: { nombre: string; tipo_evento: string } | null }
 
     if (!data) return { title: 'Evento no encontrado — Event Planner' }
 
@@ -34,11 +35,35 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+interface EventoClienteRow {
+    id: string
+    nombre: string
+    tipo_evento: string
+    fecha_evento: string
+    presupuesto_usd: number | null
+    tipo_cambio: number | null
+    planners: { nombre: string; email: string; telefono: string | null } | null
+    fases: {
+        id: string; nombre: string; descripcion: string | null; orden: number
+        tareas: {
+            id: string; nombre: string; tipo: string | null; fecha: string | null
+            estado: string; completada: boolean; resumen: string | null; orden: number
+            acuerdos: { id: string; texto: string }[]
+        }[]
+    }[]
+    rubros: {
+        id: string; nombre: string; estado: string; proveedor: string | null
+        monto_original: number | null; moneda: string; sena_pct: number | null
+        orden: number; notas: string | null
+    }[]
+}
+
 export default async function EventoClientePage({ params }: Props) {
     const { token } = await params
     const supabase = await createServerSupabaseClient()
 
-    const { data: evento } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: eventoRaw } = await (supabase as any)
         .from('eventos')
         .select(`
             id,
@@ -62,6 +87,8 @@ export default async function EventoClientePage({ params }: Props) {
         `)
         .eq('token_acceso', token)
         .single()
+
+    const evento = eventoRaw as EventoClienteRow | null
 
     if (!evento) {
         return <NotFoundPage />
@@ -96,6 +123,7 @@ export default async function EventoClientePage({ params }: Props) {
 
     return (
         <EventoClienteView
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             evento={{
                 id: evento.id,
                 nombre: evento.nombre,
@@ -103,8 +131,10 @@ export default async function EventoClientePage({ params }: Props) {
                 fecha_evento: evento.fecha_evento,
                 presupuesto_usd: evento.presupuesto_usd,
                 tipo_cambio: evento.tipo_cambio,
-                fases: fasesSorted,
-                rubros: rubrosSorted,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                fases: fasesSorted as any,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                rubros: rubrosSorted as any,
                 planner: planner ? {
                     nombre: planner.nombre,
                     email: planner.email,

@@ -7,6 +7,8 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 
 export async function createPlanner(formData: FormData) {
     const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
 
     const nombre = (formData.get('nombre') as string).trim()
     const email = (formData.get('email') as string).trim() || null
@@ -16,7 +18,7 @@ export async function createPlanner(formData: FormData) {
 
     if (!nombre) return { error: 'El nombre es requerido' }
 
-    const { error } = await supabase
+    const { error } = await db
         .from('planners')
         .insert({ nombre, email, telefono, bio_corta, foto_url })
 
@@ -30,6 +32,8 @@ export async function createPlanner(formData: FormData) {
 
 export async function updatePlanner(id: string, formData: FormData) {
     const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
 
     const nombre = (formData.get('nombre') as string).trim()
     const email = (formData.get('email') as string).trim() || null
@@ -39,7 +43,7 @@ export async function updatePlanner(id: string, formData: FormData) {
 
     if (!nombre) return { error: 'El nombre es requerido' }
 
-    const { error } = await supabase
+    const { error } = await db
         .from('planners')
         .update({ nombre, email, telefono, bio_corta, foto_url })
         .eq('id', id)
@@ -54,8 +58,8 @@ export async function updatePlanner(id: string, formData: FormData) {
 
 export async function deletePlanner(id: string) {
     const supabase = await createServerSupabaseClient()
-
-    const { error } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
         .from('planners')
         .delete()
         .eq('id', id)

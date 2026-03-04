@@ -10,11 +10,22 @@ async function signOut() {
     redirect('/login')
 }
 
+// Local shape for Supabase query rows (avoids 'never' inference with chained .order())
+interface EventoRow {
+    id: string
+    nombre: string
+    tipo_evento: string
+    fecha_evento: string
+    token_acceso: string
+    planners: { nombre: string } | { nombre: string }[] | null
+    fases: { tareas: { id: string; completada: boolean }[] | null }[] | null
+}
+
 export default async function DashboardPage() {
     const supabase = await createServerSupabaseClient()
 
     // Fetch all eventos with nested fases → tareas for progress calculation
-    const { data: eventos } = await supabase
+    const { data: eventosRaw } = await supabase
         .from('eventos')
         .select(`
       id,
@@ -29,26 +40,25 @@ export default async function DashboardPage() {
     `)
         .order('fecha_evento', { ascending: true })
 
+    const eventos = (eventosRaw ?? []) as EventoRow[]
+
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const eventosConStats: EventoConStats[] = (eventos ?? []).map((e) => {
+    const eventosConStats: EventoConStats[] = eventos.map((e) => {
         const fechaEvento = new Date(e.fecha_evento + 'T12:00:00')
         const diasRestantes = Math.round(
             (fechaEvento.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
         )
 
         const todasTareas = (e.fases ?? []).flatMap(
-            (f: { tareas?: { id: string; completada: boolean }[] }) => f.tareas ?? []
+            (f) => f.tareas ?? []
         )
         const totalTareas = todasTareas.length
-        const tareasCompletadas = todasTareas.filter(
-            (t: { id: string; completada: boolean }) => t.completada
-        ).length
+        const tareasCompletadas = todasTareas.filter((t) => t.completada).length
         const porcentajeAvance =
             totalTareas > 0 ? Math.round((tareasCompletadas / totalTareas) * 100) : 0
 
-        // planners is a joined object (one-to-one via FK)
         const plannerNombre =
             e.planners && !Array.isArray(e.planners)
                 ? (e.planners as { nombre: string }).nombre

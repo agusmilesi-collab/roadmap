@@ -10,7 +10,8 @@ export default async function PlantillasPage() {
     const supabase = await createServerSupabaseClient()
 
     // Fetch all plantillas_fases with their tareas for all tipos at once
-    const { data: allFases } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: allFasesRaw } = await (supabase as any)
         .from('plantillas_fases')
         .select(`
             id, nombre, descripcion, orden, tipo_evento,
@@ -18,12 +19,19 @@ export default async function PlantillasPage() {
         `)
         .order('orden')
 
+    type PlantillaFaseRow = {
+        id: string; nombre: string; descripcion: string | null
+        orden: number; tipo_evento: string
+        plantillas_tareas: { id: string; nombre: string; tipo: string | null; meses_antes: number | null; orden: number }[]
+    }
+    const allFases = (allFasesRaw ?? []) as PlantillaFaseRow[]
+
     // Group by tipo_evento and deduplicate by nombre+orden (guard against bad DB data)
     const fasesPorTipo: Record<string, { id: string; nombre: string; descripcion: string | null; orden: number; tareas: { id: string; nombre: string; tipo: string | null; meses_antes: number | null; orden: number }[] }[]> = {}
 
     for (const tipo of TIPOS) {
         const seenKeys = new Set<string>()
-        fasesPorTipo[tipo] = (allFases ?? [])
+        fasesPorTipo[tipo] = allFases
             .filter((f) => {
                 if (f.tipo_evento !== tipo) return false
                 const key = `${f.nombre}__${f.orden}`
@@ -39,6 +47,7 @@ export default async function PlantillasPage() {
                 tareas: [...(f.plantillas_tareas ?? [])].sort((a, b) => a.orden - b.orden),
             }))
     }
+
 
     return (
         <main style={st.main}>

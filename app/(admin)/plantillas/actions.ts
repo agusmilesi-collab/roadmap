@@ -7,7 +7,8 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 
 export async function updatePlantillaFase(id: string, data: { nombre?: string; descripcion?: string }) {
     const supabase = await createServerSupabaseClient()
-    const { error } = await supabase.from('plantillas_fases').update(data).eq('id', id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).from('plantillas_fases').update(data).eq('id', id)
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
     return { success: true }
@@ -17,9 +18,10 @@ export async function updatePlantillaFase(id: string, data: { nombre?: string; d
 
 export async function createPlantillaFase(tipo_evento: string, nombre: string, descripcion: string) {
     const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
 
-    // Get max orden for this tipo
-    const { data: existing } = await supabase
+    const { data: existing } = await db
         .from('plantillas_fases')
         .select('orden')
         .eq('tipo_evento', tipo_evento)
@@ -28,7 +30,7 @@ export async function createPlantillaFase(tipo_evento: string, nombre: string, d
 
     const nextOrden = existing && existing.length > 0 ? (existing[0].orden ?? 0) + 1 : 1
 
-    const { error } = await supabase
+    const { error } = await db
         .from('plantillas_fases')
         .insert({ tipo_evento, nombre, descripcion: descripcion || null, orden: nextOrden })
 
@@ -41,9 +43,10 @@ export async function createPlantillaFase(tipo_evento: string, nombre: string, d
 
 export async function deletePlantillaFase(id: string) {
     const supabase = await createServerSupabaseClient()
-    // First delete its tareas
-    await supabase.from('plantillas_tareas').delete().eq('plantilla_fase_id', id)
-    const { error } = await supabase.from('plantillas_fases').delete().eq('id', id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    await db.from('plantillas_tareas').delete().eq('plantilla_fase_id', id)
+    const { error } = await db.from('plantillas_fases').delete().eq('id', id)
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
     return { success: true }
@@ -53,7 +56,8 @@ export async function deletePlantillaFase(id: string) {
 
 export async function updatePlantillaTarea(id: string, data: { nombre?: string; tipo?: string; meses_antes?: number | null }) {
     const supabase = await createServerSupabaseClient()
-    const { error } = await supabase.from('plantillas_tareas').update(data).eq('id', id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).from('plantillas_tareas').update(data).eq('id', id)
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
     return { success: true }
@@ -68,8 +72,10 @@ export async function createPlantillaTarea(
     meses_antes: number | null
 ) {
     const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
 
-    const { data: existing } = await supabase
+    const { data: existing } = await db
         .from('plantillas_tareas')
         .select('orden')
         .eq('plantilla_fase_id', plantilla_fase_id)
@@ -78,7 +84,7 @@ export async function createPlantillaTarea(
 
     const nextOrden = existing && existing.length > 0 ? (existing[0].orden ?? 0) + 1 : 1
 
-    const { error } = await supabase
+    const { error } = await db
         .from('plantillas_tareas')
         .insert({ plantilla_fase_id, nombre, tipo, meses_antes, orden: nextOrden })
 
@@ -91,7 +97,8 @@ export async function createPlantillaTarea(
 
 export async function deletePlantillaTarea(id: string) {
     const supabase = await createServerSupabaseClient()
-    const { error } = await supabase.from('plantillas_tareas').delete().eq('id', id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).from('plantillas_tareas').delete().eq('id', id)
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
     return { success: true }
@@ -101,13 +108,13 @@ export async function deletePlantillaTarea(id: string) {
 
 export async function reorderPlantillaFases(items: { id: string; orden: number }[]) {
     const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
     const results = await Promise.all(
-        items.map(({ id, orden }) =>
-            supabase.from('plantillas_fases').update({ orden }).eq('id', id)
-        )
+        items.map(({ id, orden }) => db.from('plantillas_fases').update({ orden }).eq('id', id))
     )
-    const err = results.find((r) => r.error)
-    if (err?.error) return { error: err.error.message }
+    const err = results.find((r: { error: unknown }) => r.error)
+    if (err?.error) return { error: (err.error as { message: string }).message }
     revalidatePath('/plantillas')
     return { success: true }
 }
@@ -116,13 +123,13 @@ export async function reorderPlantillaFases(items: { id: string; orden: number }
 
 export async function reorderPlantillaTareas(items: { id: string; orden: number }[]) {
     const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
     const results = await Promise.all(
-        items.map(({ id, orden }) =>
-            supabase.from('plantillas_tareas').update({ orden }).eq('id', id)
-        )
+        items.map(({ id, orden }) => db.from('plantillas_tareas').update({ orden }).eq('id', id))
     )
-    const err = results.find((r) => r.error)
-    if (err?.error) return { error: err.error.message }
+    const err = results.find((r: { error: unknown }) => r.error)
+    if (err?.error) return { error: (err.error as { message: string }).message }
     revalidatePath('/plantillas')
     return { success: true }
 }

@@ -7,10 +7,11 @@ export const metadata = { title: 'Planners — Event Planner' }
 export default async function PlannersPage() {
     const supabase = await createServerSupabaseClient()
 
-    const { data: planners } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: planners } = await (supabase as any)
         .from('planners')
         .select('id, nombre, email, telefono, bio_corta, foto_url')
-        .order('nombre')
+        .order('nombre') as { data: { id: string; nombre: string; email: string | null; telefono: string | null; bio_corta: string | null; foto_url: string | null }[] | null }
 
     return (
         <main style={st.main}>

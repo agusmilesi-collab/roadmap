@@ -16,16 +16,18 @@ export default async function PlannerEventoPage({ params }: Props) {
     if (!user) redirect('/login')
 
     // Find this planner's record
-    const { data: planner } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: planner } = await (supabase as any)
         .from('planners')
         .select('id, nombre')
         .eq('user_id', user.id)
-        .maybeSingle()
+        .maybeSingle() as { data: { id: string; nombre: string } | null }
 
     if (!planner) redirect('/planner/dashboard')
 
     // Fetch the event
-    const { data: evento } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: eventoRaw } = await (supabase as any)
         .from('eventos')
         .select(`
       id,
@@ -52,8 +54,30 @@ export default async function PlannerEventoPage({ params }: Props) {
         .eq('id', id)
         .single()
 
+    type EventoRow = {
+        id: string; nombre: string; tipo_evento: string; fecha_evento: string
+        presupuesto_usd: number | null; tipo_cambio: number | null
+        token_acceso: string; planner_id: string | null
+        planners: { nombre: string; email: string; telefono: string | null } | null
+        fases: {
+            id: string; nombre: string; descripcion: string | null; orden: number
+            tareas: {
+                id: string; nombre: string; fecha: string | null; estado: string
+                tipo: string | null; resumen: string | null; completada: boolean; orden: number
+                acuerdos: { id: string; texto: string; created_at: string }[]
+            }[]
+        }[]
+        rubros: {
+            id: string; nombre: string; estado: string; proveedor: string | null
+            monto_original: number | null; moneda: string; tipo_cambio_propio: number | null
+            sena_pct: number | null; fecha_decision: string | null; fecha_sena: string | null
+            notas: string | null; orden: number
+        }[]
+    }
+    const evento = eventoRaw as EventoRow | null
+
     // If event not found OR doesn't belong to this planner → redirect (not 404)
-    if (!evento || (evento as { planner_id?: string | null }).planner_id !== planner.id) {
+    if (!evento || evento.planner_id !== planner.id) {
         redirect('/planner/dashboard')
     }
 
@@ -95,8 +119,10 @@ export default async function PlannerEventoPage({ params }: Props) {
                     tipo_cambio: evento.tipo_cambio,
                     token_acceso: evento.token_acceso,
                     planner: plannerInfo,
-                    fases: fasesConTareas,
-                    rubros: rubrosSorted,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    fases: fasesConTareas as any,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    rubros: rubrosSorted as any,
                 }}
                 allPlanners={[]}
                 plannerId={null}

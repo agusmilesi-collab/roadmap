@@ -20,14 +20,16 @@ export async function loginAction(
 
     // If this user is a planner (not admin), auto-link their auth user_id to planners table
     if (user.email !== ADMIN_EMAIL && user.email) {
-        const { data: planner } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: planner } = await (supabase as any)
             .from('planners')
             .select('id, user_id')
             .eq('email', user.email)
-            .maybeSingle()
+            .maybeSingle() as { data: { id: string; user_id: string | null } | null }
 
         if (planner && !planner.user_id) {
-            await supabase
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase as any)
                 .from('planners')
                 .update({ user_id: user.id })
                 .eq('id', planner.id)
