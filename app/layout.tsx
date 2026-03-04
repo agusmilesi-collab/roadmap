@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Event Planner',
+  title: 'TMP Eventos',
   description: 'Gestión de eventos sociales — bodas, quinceañeras, cumpleaños y baby showers.',
 }
 

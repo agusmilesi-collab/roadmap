@@ -209,7 +209,7 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
 
                 {/* Footer */}
                 <footer style={st.footer}>
-                    <p>✦ Event Planner ✦</p>
+                    <p><img src="/logo.svg" alt="TMP Eventos" style={{ height: '28px', width: 'auto', opacity: 0.6 }} /></p>
                 </footer>
 
             </div>

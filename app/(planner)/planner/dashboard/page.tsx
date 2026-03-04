@@ -34,8 +34,7 @@ export default async function PlannerDashboardPage() {
                 <div style={styles.container}>
                     <div style={styles.header}>
                         <div style={styles.headerLeft}>
-                            <span style={styles.headerIcon}>✦</span>
-                            <h1 style={styles.title}>Event Planner</h1>
+                            <img src="/logo.svg" alt="TMP Eventos" style={{ height: '40px', width: 'auto' }} />
                         </div>
                         <form action={signOut}>
                             <button type="submit" className="btn-ghost" style={styles.signOutBtn}>
@@ -136,9 +135,8 @@ export default async function PlannerDashboardPage() {
                 {/* Header */}
                 <div style={styles.header}>
                     <div style={styles.headerLeft}>
-                        <span style={styles.headerIcon}>✦</span>
+                        <img src="/logo.svg" alt="TMP Eventos" style={{ height: '40px', width: 'auto' }} />
                         <div>
-                            <h1 style={styles.title}>Event Planner</h1>
                             <p style={styles.plannerName}>Hola, {planner.nombre}</p>
                         </div>
                     </div>

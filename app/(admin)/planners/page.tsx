@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { PlannersClient } from '@/components/admin/PlannersClient'
 
-export const metadata = { title: 'Planners — Event Planner' }
+export const metadata = { title: 'Planners — TMP Eventos' }
 
 export default async function PlannersPage() {
     const supabase = await createServerSupabaseClient()

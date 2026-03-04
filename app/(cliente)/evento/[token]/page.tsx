@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         .eq('token_acceso', token)
         .single() as { data: { nombre: string; tipo_evento: string } | null }
 
-    if (!data) return { title: 'Evento no encontrado — Event Planner' }
+    if (!data) return { title: 'Evento no encontrado — TMP Eventos' }
 
     const TIPO_SUBTITLE: Record<string, string> = {
         boda: 'La Boda de',
@@ -29,7 +29,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const subtitle = TIPO_SUBTITLE[data.tipo_evento] ?? 'El evento de'
 
     return {
-        title: `${subtitle} ${data.nombre} — Event Planner`,
+        title: `${subtitle} ${data.nombre} — TMP Eventos`,
     }
 }
 

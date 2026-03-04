@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { PlantillasClient } from '@/components/admin/PlantillasClient'
 
-export const metadata = { title: 'Plantillas — Event Planner' }
+export const metadata = { title: 'Plantillas — TMP Eventos' }
 
 const TIPOS = ['boda', 'quince', 'cumple', 'baby_shower']
 
