@@ -33,6 +33,52 @@ export async function createFase(
     revalidate(eventoId)
 }
 
+// Insert a new fase at a specific position — shifts existing fases if inserting before one
+export async function createFaseEnPosicion(
+    eventoId: string,
+    nombre: string,
+    descripcion: string,
+    posicion: string,             // 'end' or a faseId to insert before
+    fasesOrdenadas: { id: string; orden: number }[]
+) {
+    const supabase = await createServerSupabaseClient()
+
+    if (posicion === 'end') {
+        const maxOrden = fasesOrdenadas.reduce((m, f) => Math.max(m, f.orden), 0)
+        await supabase.from('fases').insert({
+            evento_id: eventoId,
+            nombre,
+            descripcion: descripcion || null,
+            orden: maxOrden + 1,
+        })
+    } else {
+        // Find the target fase's current orden
+        const target = fasesOrdenadas.find((f) => f.id === posicion)
+        if (!target) {
+            // fallback: insert at end
+            const maxOrden = fasesOrdenadas.reduce((m, f) => Math.max(m, f.orden), 0)
+            await supabase.from('fases').insert({
+                evento_id: eventoId, nombre,
+                descripcion: descripcion || null, orden: maxOrden + 1,
+            })
+        } else {
+            const insertOrden = target.orden
+            // Shift all fases from this position onwards
+            const fasesToShift = fasesOrdenadas.filter((f) => f.orden >= insertOrden)
+            for (const f of fasesToShift) {
+                await supabase.from('fases').update({ orden: f.orden + 1 }).eq('id', f.id)
+            }
+            await supabase.from('fases').insert({
+                evento_id: eventoId,
+                nombre,
+                descripcion: descripcion || null,
+                orden: insertOrden,
+            })
+        }
+    }
+    revalidate(eventoId)
+}
+
 export async function updateFase(
     id: string,
     eventoId: string,
@@ -160,6 +206,7 @@ export async function updateRubro(
         proveedor: string | null
         monto_original: number | null
         moneda: Moneda
+        tipo_cambio_propio: number | null
         sena_pct: number | null
         fecha_decision: string | null
         fecha_sena: string | null
@@ -182,5 +229,15 @@ export async function deleteRubro(id: string, eventoId: string) {
 export async function updateTipoCambio(eventoId: string, tipoCambio: number) {
     const supabase = await createServerSupabaseClient()
     await supabase.from('eventos').update({ tipo_cambio: tipoCambio }).eq('id', eventoId)
+    revalidate(eventoId)
+}
+
+export async function updateEvento(
+    eventoId: string,
+    data: Partial<{ nombre: string; planner_id: string | null }>
+) {
+    const supabase = await createServerSupabaseClient()
+    await supabase.from('eventos').update(data).eq('id', eventoId)
+    revalidatePath('/dashboard')
     revalidate(eventoId)
 }

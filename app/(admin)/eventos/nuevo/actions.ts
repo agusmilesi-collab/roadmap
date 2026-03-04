@@ -87,7 +87,7 @@ export async function createEvento(formData: FormData) {
                     orden: pt.orden,
                     estado: 'pendiente' as const,
                     completada: false,
-                    fecha: calcularFechaTarea(fecha_evento, pt.meses_antes),
+                    fecha: calcularFechaDesde(fecha_evento, pt.meses_antes, 'dias'),
                     resumen: null,
                 }))
                 await supabase.from('tareas').insert(tareas)
@@ -98,19 +98,28 @@ export async function createEvento(formData: FormData) {
     // ── 5. Fetch plantillas_rubros & insert rubros ────────────────────────────
     const { data: plantillasRubros } = await supabase
         .from('plantillas_rubros')
-        .select('nombre, sena_pct_default, meses_antes_decision, moneda_default, orden')
+        .select('nombre, sena_pct_default, dias_antes_decision, moneda_default, orden')
         .eq('tipo_evento', tipo_evento)
         .order('orden')
 
     if (plantillasRubros && plantillasRubros.length > 0) {
-        const rubros = plantillasRubros.map((pr) => ({
+        // Deduplicate by (nombre, orden) in case of duplicate rows in templates table
+        const seenRubroKeys = new Set<string>()
+        const uniqueRubros = plantillasRubros.filter((pr) => {
+            const key = `${pr.nombre}::${pr.orden}`
+            if (seenRubroKeys.has(key)) return false
+            seenRubroKeys.add(key)
+            return true
+        })
+
+        const rubros = uniqueRubros.map((pr) => ({
             evento_id: eventoId,
             nombre: pr.nombre,
             estado: 'pendiente' as const,
             moneda: pr.moneda_default,
             sena_pct: pr.sena_pct_default,
             orden: pr.orden,
-            fecha_decision: calcularFechaTarea(fecha_evento, pr.meses_antes_decision),
+            fecha_decision: calcularFechaDesde(fecha_evento, (pr as { dias_antes_decision?: number | null }).dias_antes_decision ?? null, 'dias'),
             proveedor: null,
             monto_original: null,
             fecha_sena: null,
@@ -124,12 +133,17 @@ export async function createEvento(formData: FormData) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function calcularFechaTarea(
+function calcularFechaDesde(
     fechaEvento: string,
-    mesesAntes: number | null
+    cantidad: number | null,
+    unidad: 'dias' | 'meses' = 'meses'
 ): string | null {
-    if (!mesesAntes) return null
+    if (!cantidad) return null
     const d = new Date(fechaEvento)
-    d.setMonth(d.getMonth() - mesesAntes)
+    if (unidad === 'meses') {
+        d.setMonth(d.getMonth() - cantidad)
+    } else {
+        d.setDate(d.getDate() - cantidad)
+    }
     return d.toISOString().split('T')[0]
 }

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase'
 
-const ADMIN_PATHS = ['/dashboard', '/eventos', '/planners', '/plantillas']
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? ''
+
+// Paths that require ADMIN role
+const ADMIN_PREFIXES = ['/dashboard', '/eventos', '/planners', '/plantillas']
+// Paths that require any authenticated user (planner role)
+const PLANNER_PREFIXES = ['/planner']
 
 export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl
@@ -12,19 +17,34 @@ export async function middleware(request: NextRequest) {
     // Refresh session — must call getUser() not getSession() as per @supabase/ssr docs
     const { data: { user } } = await supabase.auth.getUser()
 
-    const isAdminPath = ADMIN_PATHS.some((p) => pathname.startsWith(p))
+    const isAdminPath = ADMIN_PREFIXES.some((p) => pathname.startsWith(p))
+    const isPlannerPath = PLANNER_PREFIXES.some((p) => pathname.startsWith(p))
     const isLoginPage = pathname === '/login'
 
-    // Not authenticated → redirect to login for admin routes
-    if (isAdminPath && !user) {
+    const isAdmin = !!user && user.email === ADMIN_EMAIL
+    const isAuthenticated = !!user
+
+    // ── Not authenticated ──────────────────────────────────────────────────────
+    if ((isAdminPath || isPlannerPath) && !isAuthenticated) {
         const loginUrl = new URL('/login', request.url)
         loginUrl.searchParams.set('redirectTo', pathname)
         return NextResponse.redirect(loginUrl)
     }
 
-    // Already authenticated → skip login page
-    if (isLoginPage && user) {
+    // ── Wrong role: non-admin trying to access admin paths ─────────────────────
+    if (isAdminPath && isAuthenticated && !isAdmin) {
+        return NextResponse.redirect(new URL('/planner/dashboard', request.url))
+    }
+
+    // ── Wrong role: admin trying to access planner paths ──────────────────────
+    if (isPlannerPath && isAdmin) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
+    // ── Already authenticated on login page → redirect by role ────────────────
+    if (isLoginPage && isAuthenticated) {
+        const dest = isAdmin ? '/dashboard' : '/planner/dashboard'
+        return NextResponse.redirect(new URL(dest, request.url))
     }
 
     return response

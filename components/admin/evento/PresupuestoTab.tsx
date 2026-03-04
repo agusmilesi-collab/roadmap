@@ -12,11 +12,15 @@ const ESTADO_OPTIONS = [
     { value: 'pendiente', label: 'Pendiente' },
     { value: 'en_proceso', label: 'En proceso' },
     { value: 'decidido', label: 'Decidido' },
+    { value: 'señado', label: 'Señado' },
+    { value: 'completado', label: 'Completado' },
 ]
 const ESTADO_STYLES: Record<string, React.CSSProperties> = {
     pendiente: { backgroundColor: 'rgba(120,120,120,0.1)', color: '#888' },
     en_proceso: { backgroundColor: 'rgba(201,168,76,0.15)', color: 'var(--color-gold-dark)' },
     decidido: { backgroundColor: 'rgba(107,124,92,0.15)', color: 'var(--color-olive)' },
+    señado: { backgroundColor: 'rgba(138,109,174,0.15)', color: '#7B5EA7' },
+    completado: { backgroundColor: 'rgba(40,167,69,0.12)', color: '#2E7D32' },
 }
 
 function fmt(n: number, decimals = 0) {
@@ -169,23 +173,28 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
     const [proveedor, setProveedor] = useState(rubro.proveedor ?? '')
     const [monto, setMonto] = useState(String(rubro.monto_original ?? ''))
     const [moneda, setMoneda] = useState(rubro.moneda)
+    const [tcPropio, setTcPropio] = useState(String(rubro.tipo_cambio_propio ?? ''))
     const [senaPct, setSenaPct] = useState(String(rubro.sena_pct ?? ''))
     const [fechaDecision, setFechaDecision] = useState(rubro.fecha_decision ?? '')
     const [fechaSena, setFechaSena] = useState(rubro.fecha_sena ?? '')
     const [notas, setNotas] = useState(rubro.notas ?? '')
 
+    // Use rubro-specific TC if set, otherwise fall back to event-level TC
+    const tcEfectivo = (parseFloat(tcPropio) > 0) ? parseFloat(tcPropio) : tipoCambio
+
     const montoNum = parseFloat(monto) || 0
-    const montoUSD = moneda === 'USD' ? montoNum : montoNum / tipoCambio
+    const montoUSD = moneda === 'USD' ? montoNum : montoNum / tcEfectivo
     const senaUSD = montoUSD * ((parseFloat(senaPct) || 0) / 100)
 
     function handleSave() {
         startTransition(async () => {
             await updateRubro(rubro.id, eventoId, {
                 nombre,
-                estado: estado as 'pendiente' | 'en_proceso' | 'decidido',
+                estado: estado as 'pendiente' | 'en_proceso' | 'decidido' | 'señado' | 'completado',
                 proveedor: proveedor || null,
                 monto_original: parseFloat(monto) || null,
                 moneda: moneda as 'USD' | 'ARS',
+                tipo_cambio_propio: parseFloat(tcPropio) > 0 ? parseFloat(tcPropio) : null,
                 sena_pct: parseFloat(senaPct) || null,
                 fecha_decision: fechaDecision || null,
                 fecha_sena: fechaSena || null,
@@ -210,7 +219,7 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
                     {rubro.monto_original ? `${fmt(rubro.monto_original)} ${rubro.moneda}` : '—'}
                 </span>
                 <span style={{ fontSize: '0.82rem', textAlign: 'right', color: 'var(--color-text-muted)', minWidth: '80px' }}>
-                    {rubro.monto_original ? `USD ${fmt(moneda === 'USD' ? montoNum : montoNum / tipoCambio, 0)}` : '—'}
+                    {rubro.monto_original ? `USD ${fmt(moneda === 'USD' ? montoNum : montoNum / tcEfectivo, 0)}` : '—'}
                 </span>
                 <span style={{ fontSize: '0.82rem', textAlign: 'right', color: 'var(--color-olive)', minWidth: '70px' }}>
                     {rubro.sena_pct && rubro.monto_original ? `USD ${fmt(senaUSD, 0)}` : '—'}
@@ -249,6 +258,26 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
                                 <option value="ARS">ARS</option>
                             </select>
                         </div>
+                        {/* Per-rubro TC override — only shown for ARS rubros */}
+                        {moneda === 'ARS' && (
+                            <div className="form-group">
+                                <label className="form-label" title="Sobreescribe el TC del evento para este rubro">
+                                    TC propio (ARS/USD)
+                                    <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', marginLeft: '0.3rem' }}>
+                                        {tcPropio ? '' : `usando ${fmt(tipoCambio)}`}
+                                    </span>
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    step="10"
+                                    value={tcPropio}
+                                    onChange={e => setTcPropio(e.target.value)}
+                                    className="form-input"
+                                    placeholder={`${fmt(tipoCambio)} (evento)`}
+                                />
+                            </div>
+                        )}
                         <div className="form-group">
                             <label className="form-label">Seña %</label>
                             <input type="number" min="0" max="100" step="5" value={senaPct} onChange={e => setSenaPct(e.target.value)} className="form-input" placeholder="30" />
@@ -272,7 +301,7 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
                         <div style={st.computedRow}>
                             <span style={st.computedItem}>Equivalente USD: <strong>USD {fmt(montoUSD, 0)}</strong></span>
                             {parseFloat(senaPct) > 0 && <span style={st.computedItem}>Monto seña: <strong>USD {fmt(senaUSD, 0)}</strong> ({senaPct}%)</span>}
-                            {moneda === 'ARS' && tipoCambio > 0 && <span style={st.computedItem}>TC aplicado: <strong>{fmt(tipoCambio)} ARS/USD</strong></span>}
+                            {moneda === 'ARS' && <span style={st.computedItem}>TC usado: <strong>{fmt(tcEfectivo)} ARS/USD</strong>{rubro.tipo_cambio_propio ? ' (propio)' : ' (evento)'}</span>}
                         </div>
                     )}
 

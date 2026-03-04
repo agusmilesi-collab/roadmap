@@ -34,9 +34,13 @@ const TIPO_COLORS: Record<string, string> = {
 
 interface EventCardProps {
     evento: EventoConStats
+    /** Override the link destination. Defaults to /eventos/[id] */
+    href?: string
+    /** Hide the delete button (false for planner role). Default: true */
+    canDelete?: boolean
 }
 
-export function EventCard({ evento }: EventCardProps) {
+export function EventCard({ evento, href, canDelete = true }: EventCardProps) {
     const [confirmDelete, setConfirmDelete] = useState(false)
     const [isPending, startTransition] = useTransition()
 
@@ -78,7 +82,7 @@ export function EventCard({ evento }: EventCardProps) {
                     >
                         {tipoLabel}
                     </span>
-                    <Link href={`/eventos/${evento.id}`} style={styles.nombre}>
+                    <Link href={href ?? `/eventos/${evento.id}`} style={styles.nombre}>
                         {evento.nombre}
                     </Link>
                 </div>
@@ -138,7 +142,7 @@ export function EventCard({ evento }: EventCardProps) {
             <div style={styles.actions}>
                 <div style={styles.actionsLeft}>
                     <CopyLinkButton token={evento.token_acceso} />
-                    <Link href={`/eventos/${evento.id}`} className="btn-ghost" style={styles.editBtn}>
+                    <Link href={href ?? `/eventos/${evento.id}`} className="btn-ghost" style={styles.editBtn}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -148,7 +152,7 @@ export function EventCard({ evento }: EventCardProps) {
                 </div>
 
                 <div style={styles.actionsRight}>
-                    {confirmDelete ? (
+                    {canDelete && (confirmDelete ? (
                         <div style={styles.confirmRow}>
                             <span style={styles.confirmText}>¿Eliminar?</span>
                             <button
@@ -172,14 +176,11 @@ export function EventCard({ evento }: EventCardProps) {
                             style={styles.deleteBtn}
                         >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <polyline points="3 6 5 6 21 6" />
-                                <path d="M19 6l-1 14H6L5 6" />
-                                <path d="M10 11v6M14 11v6" />
-                                <path d="M9 6V4h6v2" />
+                                <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
                             </svg>
                             Eliminar
                         </button>
-                    )}
+                    ))}
                 </div>
             </div>
         </div>

@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
+import { loginAction } from './actions'
 
 export default function LoginPage() {
     const router = useRouter()
@@ -16,19 +16,15 @@ export default function LoginPage() {
         setError(null)
         setLoading(true)
 
-        const supabase = createClient()
-        const { error: authError } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        })
+        const result = await loginAction(email, password)
 
-        if (authError) {
-            setError('Email o contraseña incorrectos. Verificá tus datos e intentá de nuevo.')
+        if (result.error) {
+            setError(result.error)
             setLoading(false)
             return
         }
 
-        router.push('/dashboard')
+        router.push(result.redirect ?? '/dashboard')
         router.refresh()
     }
 
@@ -39,13 +35,13 @@ export default function LoginPage() {
                 <div style={styles.brand}>
                     <span style={styles.brandIcon}>✦</span>
                     <h1 style={styles.brandName}>Event Planner</h1>
-                    <p style={styles.brandTagline}>Panel de administración</p>
+                    <p style={styles.brandTagline}>Panel de gestión</p>
                 </div>
 
                 {/* Card */}
                 <div className="card" style={styles.card}>
                     <h2 style={styles.cardTitle}>Iniciar sesión</h2>
-                    <p style={styles.cardSubtitle}>Accedé con tu cuenta de organizador</p>
+                    <p style={styles.cardSubtitle}>Ingresá con tu cuenta</p>
 
                     <form onSubmit={handleSubmit} style={styles.form} noValidate>
                         <div className="form-group">
@@ -104,10 +100,6 @@ export default function LoginPage() {
                         </button>
                     </form>
                 </div>
-
-                <p style={styles.footer}>
-                    Solo el organizador tiene acceso a este panel.
-                </p>
             </div>
         </main>
     )
@@ -191,10 +183,5 @@ const styles: Record<string, React.CSSProperties> = {
         borderTopColor: 'white',
         borderRadius: '50%',
         animation: 'spin 0.7s linear infinite',
-    },
-    footer: {
-        fontSize: '0.775rem',
-        color: 'var(--color-text-muted)',
-        textAlign: 'center',
     },
 }

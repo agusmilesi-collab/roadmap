@@ -3,18 +3,20 @@
 import { useState, useTransition } from 'react'
 import type { Fase, Tarea, Acuerdo } from './EventoDetailClient'
 import {
-    createFase, updateFase, deleteFase,
+    createFaseEnPosicion,
+    updateFase, deleteFase,
     createTarea, updateTarea, deleteTarea,
     createAcuerdo, deleteAcuerdo,
 } from '@/app/(admin)/eventos/[id]/actions'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TIPO_ICONS: Record<string, string> = { reunion: '💬', entregable: '📦', decision: '⚡' }
+const TIPO_ICONS: Record<string, string> = { reunion: '💬', entregable: '📦', decision: '⚡', pago: '💰' }
 const TIPO_OPTIONS = [
     { value: 'reunion', label: '💬 Reunión' },
     { value: 'entregable', label: '📦 Entregable' },
     { value: 'decision', label: '⚡ Decisión' },
+    { value: 'pago', label: '💰 Pago' },
 ]
 const ESTADO_OPTIONS = [
     { value: 'pendiente', label: 'Pendiente' },
@@ -23,8 +25,8 @@ const ESTADO_OPTIONS = [
 ]
 const ESTADO_STYLES: Record<string, React.CSSProperties> = {
     pendiente: { backgroundColor: 'rgba(120,120,120,0.1)', color: '#888' },
-    en_curso: { backgroundColor: 'rgba(201,168,76,0.15)', color: 'var(--color-gold-dark)' },
-    completada: { backgroundColor: 'rgba(107,124,92,0.15)', color: 'var(--color-olive)' },
+    en_curso: { backgroundColor: 'rgba(59,130,246,0.12)', color: '#2563EB' },
+    completada: { backgroundColor: 'rgba(34,197,94,0.12)', color: '#16A34A' },
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -59,7 +61,7 @@ export function ProgresoTab({ fases, eventoId }: { fases: Fase[]; eventoId: stri
 
             {/* Add Fase */}
             {showAddFase ? (
-                <AddFaseForm eventoId={eventoId} onDone={() => setShowAddFase(false)} />
+                <AddFaseForm eventoId={eventoId} onDone={() => setShowAddFase(false)} fasesExistentes={fases} />
             ) : (
                 <button className="btn-ghost" style={styles.addFaseBtn} onClick={() => setShowAddFase(true)}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
@@ -222,7 +224,7 @@ function TareaDetail({ tarea, eventoId, onClose }: {
             await updateTarea(tarea.id, eventoId, {
                 nombre,
                 estado: estado as 'pendiente' | 'en_curso' | 'completada',
-                tipo: tipo as 'reunion' | 'entregable' | 'decision',
+                tipo: tipo as 'reunion' | 'entregable' | 'decision' | 'pago',
                 fecha: fecha || null,
                 resumen: resumen || null,
             })
@@ -271,7 +273,13 @@ function TareaDetail({ tarea, eventoId, onClose }: {
                 {/* Fecha */}
                 <div className="form-group">
                     <label className="form-label">Fecha</label>
-                    <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="form-input" />
+                    <input
+                        type="date"
+                        value={fecha}
+                        min={new Date().toISOString().split('T')[0]}
+                        onChange={e => setFecha(e.target.value)}
+                        className="form-input"
+                    />
                 </div>
                 {/* Resumen */}
                 <div className="form-group" style={{ gridColumn: '1 / -1' }}>
@@ -352,8 +360,10 @@ function AcuerdoItem({ acuerdo, eventoId }: { acuerdo: Acuerdo; eventoId: string
 function AddTareaForm({ faseId, eventoId, onDone }: { faseId: string; eventoId: string; onDone: () => void }) {
     const [isPending, startTransition] = useTransition()
     const [nombre, setNombre] = useState('')
-    const [tipo, setTipo] = useState<'reunion' | 'entregable' | 'decision'>('reunion')
+    const [tipo, setTipo] = useState<'reunion' | 'entregable' | 'decision' | 'pago'>('reunion')
     const [fecha, setFecha] = useState('')
+
+    const today = new Date().toISOString().split('T')[0]
 
     function handleSubmit() {
         if (!nombre.trim()) return
@@ -372,13 +382,13 @@ function AddTareaForm({ faseId, eventoId, onDone }: { faseId: string; eventoId: 
                 </div>
                 <div className="form-group" style={{ minWidth: '130px' }}>
                     <label className="form-label">Tipo</label>
-                    <select value={tipo} onChange={e => setTipo(e.target.value as 'reunion' | 'entregable' | 'decision')} className="form-input" style={{ fontSize: '0.88rem' }}>
+                    <select value={tipo} onChange={e => setTipo(e.target.value as 'reunion' | 'entregable' | 'decision' | 'pago')} className="form-input" style={{ fontSize: '0.88rem' }}>
                         {TIPO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                 </div>
                 <div className="form-group" style={{ minWidth: '120px' }}>
                     <label className="form-label">Fecha</label>
-                    <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="form-input" style={{ fontSize: '0.88rem' }} />
+                    <input type="date" value={fecha} min={today} onChange={e => setFecha(e.target.value)} className="form-input" style={{ fontSize: '0.88rem' }} />
                 </div>
                 <button onClick={handleSubmit} disabled={isPending || !nombre.trim()} className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.5rem 1rem', marginBottom: '0' }}>
                     {isPending ? '…' : 'Agregar'}
@@ -391,15 +401,17 @@ function AddTareaForm({ faseId, eventoId, onDone }: { faseId: string; eventoId: 
 
 // ─── AddFaseForm ──────────────────────────────────────────────────────────────
 
-function AddFaseForm({ eventoId, onDone }: { eventoId: string; onDone: () => void }) {
+function AddFaseForm({ eventoId, onDone, fasesExistentes }: { eventoId: string; onDone: () => void; fasesExistentes: Fase[] }) {
     const [isPending, startTransition] = useTransition()
     const [nombre, setNombre] = useState('')
     const [descripcion, setDescripcion] = useState('')
+    // Position: 'end' = after all, or a faseId meaning 'insert before this fase'
+    const [posicion, setPosicion] = useState<string>('end')
 
     function handleSubmit() {
         if (!nombre.trim()) return
         startTransition(async () => {
-            await createFase(eventoId, nombre.trim(), descripcion)
+            await createFaseEnPosicion(eventoId, nombre.trim(), descripcion, posicion, fasesExistentes)
             onDone()
         })
     }
@@ -416,6 +428,17 @@ function AddFaseForm({ eventoId, onDone }: { eventoId: string; onDone: () => voi
                     <label className="form-label">Descripción (opcional)</label>
                     <input value={descripcion} onChange={e => setDescripcion(e.target.value)} className="form-input" placeholder="Descripción breve…" />
                 </div>
+                {fasesExistentes.length > 0 && (
+                    <div className="form-group" style={{ minWidth: '180px' }}>
+                        <label className="form-label">Posición</label>
+                        <select value={posicion} onChange={e => setPosicion(e.target.value)} className="form-input" style={{ fontSize: '0.85rem' }}>
+                            {fasesExistentes.map((f, idx) => (
+                                <option key={f.id} value={f.id}>Antes de: {f.nombre}</option>
+                            ))}
+                            <option value="end">Al final</option>
+                        </select>
+                    </div>
+                )}
                 <button onClick={handleSubmit} disabled={isPending || !nombre.trim()} className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.55rem 1.1rem' }}>
                     {isPending ? 'Creando…' : 'Crear fase'}
                 </button>

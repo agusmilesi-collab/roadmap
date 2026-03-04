@@ -2,8 +2,8 @@
 
 export type TipoEvento = 'boda' | 'quince' | 'cumple' | 'baby_shower'
 export type EstadoTarea = 'pendiente' | 'en_curso' | 'completada'
-export type TipoTarea = 'reunion' | 'entregable' | 'decision'
-export type EstadoRubro = 'pendiente' | 'en_proceso' | 'decidido'
+export type TipoTarea = 'reunion' | 'entregable' | 'decision' | 'pago'
+export type EstadoRubro = 'pendiente' | 'en_proceso' | 'decidido' | 'señado' | 'completado'
 export type Moneda = 'USD' | 'ARS'
 
 export interface Planner {
@@ -69,6 +69,7 @@ export interface Rubro {
     proveedor: string | null
     monto_original: number | null
     moneda: Moneda
+    tipo_cambio_propio: number | null
     sena_pct: number | null
     fecha_decision: string | null
     fecha_sena: string | null
@@ -100,7 +101,7 @@ export interface PlantillaRubro {
     tipo_evento: TipoEvento
     nombre: string
     sena_pct_default: number | null
-    meses_antes_decision: number | null
+    dias_antes_decision: number | null
     moneda_default: Moneda
     orden: number
 }

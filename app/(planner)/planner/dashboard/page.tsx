@@ -10,10 +10,52 @@ async function signOut() {
     redirect('/login')
 }
 
-export default async function DashboardPage() {
+export default async function PlannerDashboardPage() {
     const supabase = await createServerSupabaseClient()
 
-    // Fetch all eventos with nested fases → tareas for progress calculation
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) redirect('/login')
+
+    // Find planner record by user_id
+    const { data: planner } = await supabase
+        .from('planners')
+        .select('id, nombre')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+    if (!planner) {
+        // Planner account not linked yet — show a friendly message
+        return (
+            <main style={styles.main}>
+                <div style={styles.container}>
+                    <div style={styles.header}>
+                        <div style={styles.headerLeft}>
+                            <span style={styles.headerIcon}>✦</span>
+                            <h1 style={styles.title}>Event Planner</h1>
+                        </div>
+                        <form action={signOut}>
+                            <button type="submit" className="btn-ghost" style={styles.signOutBtn}>
+                                Cerrar sesión
+                            </button>
+                        </form>
+                    </div>
+                    <div className="card" style={{ padding: '3rem 2rem', textAlign: 'center' }}>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>⏳</div>
+                        <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', marginBottom: '0.5rem' }}>
+                            Tu cuenta aún no está vinculada
+                        </h2>
+                        <p style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', maxWidth: '360px', margin: '0 auto' }}>
+                            Tu email ({user.email}) no coincide con ningún planner registrado.
+                            Pedile al administrador que registre tu cuenta como planner.
+                        </p>
+                    </div>
+                </div>
+            </main>
+        )
+    }
+
+    // Fetch only events assigned to this planner
     const { data: eventos } = await supabase
         .from('eventos')
         .select(`
@@ -27,6 +69,7 @@ export default async function DashboardPage() {
         tareas ( id, completada )
       )
     `)
+        .eq('planner_id', planner.id)
         .order('fecha_evento', { ascending: true })
 
     const today = new Date()
@@ -37,7 +80,6 @@ export default async function DashboardPage() {
         const diasRestantes = Math.round(
             (fechaEvento.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
         )
-
         const todasTareas = (e.fases ?? []).flatMap(
             (f: { tareas?: { id: string; completada: boolean }[] }) => f.tareas ?? []
         )
@@ -45,10 +87,7 @@ export default async function DashboardPage() {
         const tareasCompletadas = todasTareas.filter(
             (t: { id: string; completada: boolean }) => t.completada
         ).length
-        const porcentajeAvance =
-            totalTareas > 0 ? Math.round((tareasCompletadas / totalTareas) * 100) : 0
-
-        // planners is a joined object (one-to-one via FK)
+        const porcentajeAvance = totalTareas > 0 ? Math.round((tareasCompletadas / totalTareas) * 100) : 0
         const plannerNombre =
             e.planners && !Array.isArray(e.planners)
                 ? (e.planners as { nombre: string }).nombre
@@ -75,7 +114,10 @@ export default async function DashboardPage() {
                 <div style={styles.header}>
                     <div style={styles.headerLeft}>
                         <span style={styles.headerIcon}>✦</span>
-                        <h1 style={styles.title}>Event Planner</h1>
+                        <div>
+                            <h1 style={styles.title}>Event Planner</h1>
+                            <p style={styles.plannerName}>Hola, {planner.nombre}</p>
+                        </div>
                     </div>
                     <form action={signOut}>
                         <button type="submit" className="btn-ghost" style={styles.signOutBtn}>
@@ -84,56 +126,33 @@ export default async function DashboardPage() {
                     </form>
                 </div>
 
-                {/* Quick nav */}
-                <div style={styles.quickNav}>
-                    <Link href="/planners" style={styles.quickNavLink}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                        </svg>
-                        Planners
-                    </Link>
-                    <Link href="/plantillas" style={styles.quickNavLink}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="9" x2="15" y2="9" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="12" y2="17" />
-                        </svg>
-                        Plantillas
-                    </Link>
-                </div>
-
                 {/* Toolbar */}
                 <div style={styles.toolbar}>
-                    <div>
-                        <p style={styles.subtitle}>
-                            {eventosConStats.length === 0
-                                ? 'No hay eventos creados aún'
-                                : `${eventosConStats.length} evento${eventosConStats.length !== 1 ? 's' : ''}`}
-                        </p>
-                    </div>
-                    <Link href="/eventos/nuevo" className="btn-gold" style={styles.newBtn}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="12" y1="5" x2="12" y2="19" />
-                            <line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
-                        Nuevo evento
-                    </Link>
+                    <p style={styles.subtitle}>
+                        {eventosConStats.length === 0
+                            ? 'No tenés eventos asignados aún'
+                            : `${eventosConStats.length} evento${eventosConStats.length !== 1 ? 's' : ''} asignado${eventosConStats.length !== 1 ? 's' : ''}`}
+                    </p>
                 </div>
 
                 {/* Events list */}
                 {eventosConStats.length === 0 ? (
                     <div className="card" style={styles.emptyState}>
                         <div style={styles.emptyIcon}>📅</div>
-                        <h2 style={styles.emptyTitle}>Sin eventos aún</h2>
+                        <h2 style={styles.emptyTitle}>Sin eventos asignados</h2>
                         <p style={styles.emptyText}>
-                            Creá tu primer evento y el sistema copiará las plantillas automáticamente.
+                            El administrador aún no te asignó ningún evento.
                         </p>
-                        <Link href="/eventos/nuevo" className="btn-gold" style={{ marginTop: '0.5rem' }}>
-                            Crear primer evento
-                        </Link>
                     </div>
                 ) : (
                     <div style={styles.eventsList}>
                         {eventosConStats.map((evento) => (
-                            <EventCard key={evento.id} evento={evento} />
+                            <EventCard
+                                key={evento.id}
+                                evento={evento}
+                                href={`/planner/eventos/${evento.id}`}
+                                canDelete={false}
+                            />
                         ))}
                     </div>
                 )}
@@ -165,7 +184,7 @@ const styles: Record<string, React.CSSProperties> = {
     headerLeft: {
         display: 'flex',
         alignItems: 'center',
-        gap: '0.5rem',
+        gap: '0.65rem',
     },
     headerIcon: {
         color: 'var(--color-gold)',
@@ -176,41 +195,23 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '1.5rem',
         fontWeight: 600,
         color: 'var(--color-text)',
+        lineHeight: 1.1,
+    },
+    plannerName: {
+        fontSize: '0.8rem',
+        color: 'var(--color-text-muted)',
+        marginTop: '0.1rem',
     },
     signOutBtn: {
         fontSize: '0.8rem',
     },
-    quickNav: {
-        display: 'flex',
-        gap: '0.5rem',
-        flexWrap: 'wrap' as const,
-    },
-    quickNavLink: {
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '0.4rem',
-        fontSize: '0.8rem',
-        fontWeight: 500,
-        padding: '0.4rem 0.9rem',
-        border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-sm)',
-        color: 'var(--color-text-muted)',
-        backgroundColor: 'var(--color-white)',
-        textDecoration: 'none',
-        transition: 'border-color 0.15s, color 0.15s',
-    },
     toolbar: {
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
     },
     subtitle: {
         fontSize: '0.875rem',
         color: 'var(--color-text-muted)',
-    },
-    newBtn: {
-        gap: '0.4rem',
-        paddingInline: '1.25rem',
     },
     eventsList: {
         display: 'flex',
@@ -225,9 +226,7 @@ const styles: Record<string, React.CSSProperties> = {
         padding: '3rem 2rem',
         textAlign: 'center',
     },
-    emptyIcon: {
-        fontSize: '3rem',
-    },
+    emptyIcon: { fontSize: '3rem' },
     emptyTitle: {
         fontFamily: 'var(--font-serif)',
         fontSize: '1.35rem',

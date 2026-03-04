@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { ProgresoTab } from './ProgresoTab'
 import { PresupuestoTab } from './PresupuestoTab'
+import { updateEvento } from '@/app/(admin)/eventos/[id]/actions'
 
 // ─── Shared types (passed as props from server) ──────────────────────────────
 
@@ -39,6 +40,7 @@ export interface Rubro {
     proveedor: string | null
     monto_original: number | null
     moneda: string
+    tipo_cambio_propio: number | null
     sena_pct: number | null
     fecha_decision: string | null
     fecha_sena: string | null
@@ -70,10 +72,32 @@ const TIPO_COLORS: Record<string, string> = {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-interface Props { evento: EventoData }
+interface Props {
+    evento: EventoData
+    allPlanners: { id: string; nombre: string }[]
+    plannerId: string | null
+    /** If false, the planner dropdown is hidden and planner_id is not changed on save. Default: true */
+    canChangePlanner?: boolean
+    /** Back-link href. Default: /dashboard */
+    backHref?: string
+}
 
-export function EventoDetailClient({ evento }: Props) {
+export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePlanner = true, backHref = '/dashboard' }: Props) {
     const [tab, setTab] = useState<'progreso' | 'presupuesto'>('progreso')
+    const [editingHeader, setEditingHeader] = useState(false)
+    const [editNombre, setEditNombre] = useState(evento.nombre)
+    const [editPlannerId, setEditPlannerId] = useState(plannerId ?? '')
+    const [isSavingHeader, startSavingHeader] = useTransition()
+
+    function handleSaveHeader() {
+        startSavingHeader(async () => {
+            await updateEvento(evento.id, {
+                nombre: editNombre.trim() || evento.nombre,
+                ...(canChangePlanner ? { planner_id: editPlannerId || null } : {}),
+            })
+            setEditingHeader(false)
+        })
+    }
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -95,45 +119,106 @@ export function EventoDetailClient({ evento }: Props) {
         <div style={styles.wrapper}>
             {/* ── Event header ─────────────────────────────────── */}
             <div className="card" style={styles.header}>
-                <div style={styles.headerTop}>
-                    <div>
-                        <span style={{ ...styles.tipoBadge, backgroundColor: tipoColor + '18', color: tipoColor, borderColor: tipoColor + '40' }}>
-                            {tipoLabel}
-                        </span>
-                        <h1 style={styles.nombre}>{evento.nombre}</h1>
-                        {evento.planner && (
-                            <p style={styles.plannerRow}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-                                </svg>
-                                {evento.planner.nombre}
-                            </p>
-                        )}
+                {editingHeader ? (
+                    /* ── Edit form ── */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                        <p style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-gold-dark)' }}>Editar evento</p>
+                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                            <div className="form-group" style={{ flex: 2, minWidth: '200px' }}>
+                                <label className="form-label">Nombre del evento</label>
+                                <input
+                                    autoFocus
+                                    value={editNombre}
+                                    onChange={e => setEditNombre(e.target.value)}
+                                    className="form-input"
+                                    style={{ fontSize: '1rem', fontFamily: 'var(--font-serif)' }}
+                                />
+                            </div>
+                            {allPlanners.length > 0 && (
+                                <div className="form-group" style={{ minWidth: '200px' }}>
+                                    <label className="form-label">Planner asignado</label>
+                                    <select
+                                        value={editPlannerId}
+                                        onChange={e => setEditPlannerId(e.target.value)}
+                                        className="form-input"
+                                    >
+                                        <option value="">Sin planner</option>
+                                        {allPlanners.map(p => (
+                                            <option key={p.id} value={p.id}>{p.nombre}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button onClick={handleSaveHeader} disabled={isSavingHeader} className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.45rem 1rem' }}>
+                                {isSavingHeader ? 'Guardando…' : 'Guardar'}
+                            </button>
+                            <button
+                                onClick={() => { setEditingHeader(false); setEditNombre(evento.nombre); setEditPlannerId(plannerId ?? '') }}
+                                className="btn-ghost"
+                                style={{ fontSize: '0.82rem', padding: '0.45rem 0.85rem' }}
+                            >
+                                Cancelar
+                            </button>
+                        </div>
                     </div>
-                    <div style={styles.headerRight}>
-                        <div style={styles.statBox}>
-                            <span style={styles.statLabel}>Fecha</span>
-                            <span style={styles.statValue}>
-                                {fechaEvento.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                ) : (
+                    /* ── Read-only view ── */
+                    <div style={styles.headerTop}>
+                        <div>
+                            <span style={{ ...styles.tipoBadge, backgroundColor: tipoColor + '18', color: tipoColor, borderColor: tipoColor + '40' }}>
+                                {tipoLabel}
                             </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.3rem' }}>
+                                <h1 style={styles.nombre}>{evento.nombre}</h1>
+                                <button
+                                    onClick={() => setEditingHeader(true)}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '0.2rem', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                                    title="Editar nombre y planner"
+                                >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                    </svg>
+                                </button>
+                            </div>
+                            {evento.planner && (
+                                <p style={styles.plannerRow}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+                                    </svg>
+                                    {evento.planner.nombre}
+                                </p>
+                            )}
                         </div>
-                        <div style={styles.statBox}>
-                            <span style={styles.statLabel}>Días restantes</span>
-                            <span style={{ ...styles.statValue, color: diasRestantes < 0 ? 'var(--color-error)' : diasRestantes <= 30 ? '#C97A2A' : 'var(--color-olive)' }}>
-                                {diasRestantes < 0 ? `−${Math.abs(diasRestantes)} días` : diasRestantes === 0 ? '¡Hoy!' : `${diasRestantes} días`}
-                            </span>
-                        </div>
-                        <div style={styles.statBox}>
-                            <span style={styles.statLabel}>Avance</span>
-                            <span style={styles.statValue}>{avance}% <span style={{ fontWeight: 400, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>({completadas}/{todasTareas.length})</span></span>
+                        <div style={styles.headerRight}>
+                            <div style={styles.statBox}>
+                                <span style={styles.statLabel}>Fecha</span>
+                                <span style={styles.statValue}>
+                                    {fechaEvento.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </span>
+                            </div>
+                            <div style={styles.statBox}>
+                                <span style={styles.statLabel}>Días restantes</span>
+                                <span style={{ ...styles.statValue, color: diasRestantes < 0 ? 'var(--color-error)' : diasRestantes <= 30 ? '#C97A2A' : 'var(--color-olive)' }}>
+                                    {diasRestantes < 0 ? `−${Math.abs(diasRestantes)} días` : diasRestantes === 0 ? '¡Hoy!' : `${diasRestantes} días`}
+                                </span>
+                            </div>
+                            <div style={styles.statBox}>
+                                <span style={styles.statLabel}>Avance</span>
+                                <span style={styles.statValue}>{avance}% <span style={{ fontWeight: 400, color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>({completadas}/{todasTareas.length})</span></span>
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
 
-                {/* Progress bar */}
-                <div style={styles.progressBar}>
-                    <div style={{ ...styles.progressFill, width: `${avance}%`, backgroundColor: avance === 100 ? 'var(--color-olive)' : 'var(--color-gold)' }} />
-                </div>
+                {/* Progress bar — always visible */}
+                {!editingHeader && (
+                    <div style={styles.progressBar}>
+                        <div style={{ ...styles.progressFill, width: `${avance}%`, backgroundColor: avance === 100 ? 'var(--color-olive)' : 'var(--color-gold)' }} />
+                    </div>
+                )}
             </div>
 
             {/* ── Tabs ─────────────────────────────────────────── */}

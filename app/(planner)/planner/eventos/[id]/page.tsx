@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { EventoDetailClient } from '@/components/admin/evento/EventoDetailClient'
@@ -7,10 +7,24 @@ interface Props {
     params: Promise<{ id: string }>
 }
 
-export default async function EventoDetailPage({ params }: Props) {
+export default async function PlannerEventoPage({ params }: Props) {
     const { id } = await params
     const supabase = await createServerSupabaseClient()
 
+    // Verify that the authenticated user is a planner assigned to this event
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) redirect('/login')
+
+    // Find this planner's record
+    const { data: planner } = await supabase
+        .from('planners')
+        .select('id, nombre')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+    if (!planner) redirect('/planner/dashboard')
+
+    // Fetch the event
     const { data: evento } = await supabase
         .from('eventos')
         .select(`
@@ -38,9 +52,12 @@ export default async function EventoDetailPage({ params }: Props) {
         .eq('id', id)
         .single()
 
-    if (!evento) notFound()
+    // If event not found OR doesn't belong to this planner → redirect (not 404)
+    if (!evento || (evento as { planner_id?: string | null }).planner_id !== planner.id) {
+        redirect('/planner/dashboard')
+    }
 
-    // Sort fases and tasks by orden, dedup by id (guard against duplicate DB rows)
+    // Sort fases and tasks by orden, dedup
     const seenFases = new Set<string>()
     const fasesSorted = [...(evento.fases ?? [])]
         .sort((a, b) => a.orden - b.orden)
@@ -55,21 +72,15 @@ export default async function EventoDetailPage({ params }: Props) {
         .sort((a, b) => a.orden - b.orden)
         .filter((r) => { if (seenRubros.has(r.id)) return false; seenRubros.add(r.id); return true })
 
-    const planner = evento.planners && !Array.isArray(evento.planners)
+    const plannerInfo = evento.planners && !Array.isArray(evento.planners)
         ? (evento.planners as { nombre: string; email: string; telefono: string | null })
         : null
-
-    const allPlanners = await supabase
-        .from('planners')
-        .select('id, nombre')
-        .order('nombre')
-        .then((r) => r.data ?? [])
 
     return (
         <main style={styles.main}>
             {/* Breadcrumb */}
             <div style={styles.breadcrumb}>
-                <Link href="/dashboard" style={styles.breadcrumbLink}>← Dashboard</Link>
+                <Link href="/planner/dashboard" style={styles.breadcrumbLink}>← Mis eventos</Link>
                 <span style={styles.breadcrumbSep}>/</span>
                 <span style={styles.breadcrumbCurrent}>{evento.nombre}</span>
             </div>
@@ -83,12 +94,13 @@ export default async function EventoDetailPage({ params }: Props) {
                     presupuesto_usd: evento.presupuesto_usd,
                     tipo_cambio: evento.tipo_cambio,
                     token_acceso: evento.token_acceso,
-                    planner,
+                    planner: plannerInfo,
                     fases: fasesConTareas,
                     rubros: rubrosSorted,
                 }}
-                allPlanners={allPlanners}
-                plannerId={(evento as { planner_id?: string | null }).planner_id ?? null}
+                allPlanners={[]}
+                plannerId={null}
+                canChangePlanner={false}
             />
         </main>
     )
@@ -105,7 +117,6 @@ const styles: Record<string, React.CSSProperties> = {
         alignItems: 'center',
         gap: '0.5rem',
         fontSize: '0.85rem',
-        marginBottom: '1.5rem',
         maxWidth: '980px',
         margin: '0 auto 1.5rem',
     },
