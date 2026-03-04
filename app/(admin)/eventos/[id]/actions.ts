@@ -142,11 +142,12 @@ export async function updateTarea(
     }
 ) {
     const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
     const update = { ...data }
     if (update.estado === 'completada') update.completada = true
     else if (update.estado === 'pendiente' || update.estado === 'en_curso') update.completada = false
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('tareas').update(update).eq('id', id)
+    await db.from('tareas').update(update).eq('id', id)
     revalidate(eventoId)
 }
 

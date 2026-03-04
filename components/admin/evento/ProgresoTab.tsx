@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useEffect, useTransition } from 'react'
 import { DragDropContext, Droppable, Draggable, type DropResult, type DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
 import type { Fase, Tarea, Acuerdo } from './EventoDetailClient'
 import {
@@ -48,6 +48,11 @@ export function ProgresoTab({ fases: initialFases, eventoId }: { fases: Fase[]; 
     const [editingFaseId, setEditingFaseId] = useState<string | null>(null)
     const [showAddFase, setShowAddFase] = useState(false)
     const [, startReorder] = useTransition()
+
+    // Sync local state when server re-renders with fresh data (after revalidatePath)
+    useEffect(() => {
+        setFases(initialFases)
+    }, [initialFases])
 
     function handleDragEnd(result: DropResult) {
         const { destination, source, type } = result
@@ -385,7 +390,6 @@ function TareaDetail({ tarea, eventoId, onClose }: {
                     <input
                         type="date"
                         value={fecha}
-                        min={new Date().toISOString().split('T')[0]}
                         onChange={e => setFecha(e.target.value)}
                         className="form-input"
                     />
