@@ -31,13 +31,12 @@ const ESTADO_STYLES: Record<string, React.CSSProperties> = {
     completada: { backgroundColor: 'rgba(34,197,94,0.12)', color: '#16A34A' },
 }
 
-const TODAY_ADMIN = new Date()
-TODAY_ADMIN.setHours(0, 0, 0, 0)
-
 function isVencida(tarea: Tarea): boolean {
     if (tarea.completada) return false
     if (!tarea.fecha) return false
-    return new Date(tarea.fecha + 'T12:00:00') < TODAY_ADMIN
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    return new Date(tarea.fecha + 'T12:00:00') < hoy
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -274,39 +273,40 @@ function TareaRow({ tarea, eventoId, isExpanded, onToggle, dragHandleProps }: {
 }) {
     const vencida = isVencida(tarea)
     return (
-        <div style={{ ...styles.tareaRow, borderColor: isExpanded ? 'var(--color-gold)' : vencida ? 'rgba(239,68,68,0.3)' : 'var(--color-border)' }}>
-            {/* Drag handle for tarea */}
-            {dragHandleProps && (
-                <div {...dragHandleProps} style={styles.tareaDragHandle} title="Arrastrar para reordenar">
-                    ⠿
-                </div>
-            )}
-            {/* Summary row (always visible) */}
-            <button onClick={onToggle} style={styles.tareaRowBtn}>
-                <span style={styles.tareaIcon}>{TIPO_ICONS[tarea.tipo] ?? '📌'}</span>
-                <span style={{
-                    ...styles.tareaNombre,
-                    color: tarea.completada ? 'var(--color-text-muted)' : vencida ? '#EF4444' : 'var(--color-text)',
-                    textDecoration: tarea.completada ? 'line-through' : 'none',
-                }}>{tarea.nombre}</span>
-                {vencida ? (
-                    <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.06em', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.1)', padding: '0.1rem 0.45rem', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0 }}>VENCIDA</span>
-                ) : (
-                    <span style={{ ...styles.estadoBadge, ...ESTADO_STYLES[tarea.estado] }}>
-                        {ESTADO_OPTIONS.find(o => o.value === tarea.estado)?.label ?? tarea.estado}
-                    </span>
+        <div style={{ ...styles.tareaRow, borderColor: isExpanded ? 'var(--color-gold)' : vencida ? 'rgba(239,68,68,0.3)' : 'var(--color-border)', flexDirection: 'column' }}>
+            {/* Summary row: drag handle + toggle button side by side */}
+            <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                {dragHandleProps && (
+                    <div {...dragHandleProps} style={styles.tareaDragHandle} title="Arrastrar para reordenar">
+                        ⠿
+                    </div>
                 )}
-                {tarea.fecha && (
-                    <span style={{ ...styles.tareaFecha, color: vencida ? '#EF4444' : 'var(--color-text-muted)' }}>
-                        {new Date(tarea.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })}
-                    </span>
-                )}
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, color: 'var(--color-text-muted)' }}>
-                    <polyline points="6 9 12 15 18 9" />
-                </svg>
-            </button>
+                <button onClick={onToggle} style={styles.tareaRowBtn}>
+                    <span style={styles.tareaIcon}>{TIPO_ICONS[tarea.tipo] ?? '📌'}</span>
+                    <span style={{
+                        ...styles.tareaNombre,
+                        color: tarea.completada ? 'var(--color-text-muted)' : vencida ? '#EF4444' : 'var(--color-text)',
+                        textDecoration: tarea.completada ? 'line-through' : 'none',
+                    }}>{tarea.nombre}</span>
+                    {vencida ? (
+                        <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.06em', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.1)', padding: '0.1rem 0.45rem', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0 }}>VENCIDA</span>
+                    ) : (
+                        <span style={{ ...styles.estadoBadge, ...ESTADO_STYLES[tarea.estado] }}>
+                            {ESTADO_OPTIONS.find(o => o.value === tarea.estado)?.label ?? tarea.estado}
+                        </span>
+                    )}
+                    {tarea.fecha && (
+                        <span style={{ ...styles.tareaFecha, color: vencida ? '#EF4444' : 'var(--color-text-muted)' }}>
+                            {new Date(tarea.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        </span>
+                    )}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, color: 'var(--color-text-muted)' }}>
+                        <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                </button>
+            </div>
 
-            {/* Expanded detail */}
+            {/* Expanded detail — full width below */}
             {isExpanded && (
                 <TareaDetail tarea={tarea} eventoId={eventoId} onClose={onToggle} />
             )}

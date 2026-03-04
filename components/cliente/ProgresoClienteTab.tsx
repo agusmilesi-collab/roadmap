@@ -30,16 +30,15 @@ function formatFechaLarga(fechaStr: string): string {
 
 // ─── Helper: compute effective visual state ───────────────────────────────────
 
-const TODAY = new Date()
-TODAY.setHours(0, 0, 0, 0)
-
 type TareaVisualState = 'completada' | 'vencida' | 'en_curso' | 'pendiente'
 
 function getVisualState(tarea: Tarea): TareaVisualState {
     if (tarea.completada) return 'completada'
     if (tarea.fecha) {
+        const hoy = new Date()
+        hoy.setHours(0, 0, 0, 0)
         const d = new Date(tarea.fecha + 'T12:00:00')
-        if (d < TODAY) return 'vencida'
+        if (d < hoy) return 'vencida'
     }
     if (tarea.estado === 'en_curso' || tarea.estado === 'en_proceso') return 'en_curso'
     return 'pendiente'
@@ -57,9 +56,11 @@ export function ProgresoClienteTab({ fases }: Props) {
             {fases.map((fase) => {
                 const total = fase.tareas.length
                 const completadas = fase.tareas.filter((t) => t.completada).length
-                const hasVencida = fase.tareas.some(
-                    (t) => !t.completada && t.fecha && new Date(t.fecha + 'T12:00:00') < TODAY
-                )
+                const hasVencida = fase.tareas.some((t) => {
+                    if (t.completada || !t.fecha) return false
+                    const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+                    return new Date(t.fecha + 'T12:00:00') < hoy
+                })
                 // Sort by orden asc, then fecha asc (nulls last)
                 const tareasOrdenadas = [...fase.tareas].sort((a, b) => {
                     if (a.orden !== b.orden) return (a.orden ?? 0) - (b.orden ?? 0)

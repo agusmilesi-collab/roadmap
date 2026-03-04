@@ -72,9 +72,6 @@ const TIPO_COLORS: Record<string, string> = {
 
 // ─── Segmented progress bar ───────────────────────────────────────────────────
 
-const TODAY_BAR = new Date()
-TODAY_BAR.setHours(0, 0, 0, 0)
-
 function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
     if (fases.length === 0) return null
     return (
@@ -85,9 +82,11 @@ function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
                     const total = fase.tareas.length
                     const done = fase.tareas.filter((t) => t.completada).length
                     const pct = total === 0 ? 0 : Math.round((done / total) * 100)
-                    const hasVencida = fase.tareas.some(
-                        (t) => !t.completada && t.fecha && new Date(t.fecha + 'T12:00:00') < TODAY_BAR
-                    )
+                    const hasVencida = fase.tareas.some((t) => {
+                        if (t.completada || !t.fecha) return false
+                        const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+                        return new Date(t.fecha + 'T12:00:00') < hoy
+                    })
                     const bg = total === 0
                         ? 'var(--color-cream-dark)'
                         : hasVencida
