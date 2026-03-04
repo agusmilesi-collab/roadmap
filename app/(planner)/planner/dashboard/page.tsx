@@ -70,6 +70,8 @@ export default async function PlannerDashboardPage() {
       token_acceso,
       planners ( nombre ),
       fases (
+        nombre,
+        orden,
         tareas ( id, completada )
       )
     `)
@@ -83,7 +85,7 @@ export default async function PlannerDashboardPage() {
         id: string; nombre: string; tipo_evento: string; fecha_evento: string
         token_acceso: string
         planners: { nombre: string } | null
-        fases: { tareas: { id: string; completada: boolean }[] | null }[] | null
+        fases: { nombre: string; orden: number; tareas: { id: string; completada: boolean }[] | null }[] | null
     }
     const eventosList = (eventos ?? []) as EventoRow[]
 
@@ -105,6 +107,14 @@ export default async function PlannerDashboardPage() {
                 ? (e.planners as { nombre: string }).nombre
                 : null
 
+        const fasesStats = (e.fases ?? [])
+            .sort((a, b) => a.orden - b.orden)
+            .map((f) => ({
+                nombre: f.nombre,
+                total: (f.tareas ?? []).length,
+                completadas: (f.tareas ?? []).filter((t: { id: string; completada: boolean }) => t.completada).length,
+            }))
+
         return {
             id: e.id,
             nombre: e.nombre,
@@ -116,6 +126,7 @@ export default async function PlannerDashboardPage() {
             totalTareas,
             tareasCompletadas,
             plannerNombre,
+            fases: fasesStats,
         }
     })
 

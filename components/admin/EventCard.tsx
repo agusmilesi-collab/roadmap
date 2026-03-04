@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { CopyLinkButton } from './CopyLinkButton'
 import { deleteEvento } from '@/app/(admin)/dashboard/actions'
 
 export interface EventoConStats {
@@ -16,27 +15,19 @@ export interface EventoConStats {
     totalTareas: number
     tareasCompletadas: number
     plannerNombre: string | null
+    fases: { nombre: string; total: number; completadas: number }[]
 }
 
 const TIPO_LABELS: Record<string, string> = {
-    boda: 'Boda',
-    quince: 'Quinceañera',
-    cumple: 'Cumpleaños',
-    baby_shower: 'Baby Shower',
+    boda: 'Boda', quince: 'Quinceañera', cumple: 'Cumpleaños', baby_shower: 'Baby Shower',
 }
-
 const TIPO_COLORS: Record<string, string> = {
-    boda: '#C9A84C',
-    quince: '#8A6DAE',
-    cumple: '#4C8AC9',
-    baby_shower: '#C96B8A',
+    boda: '#C9A84C', quince: '#8A6DAE', cumple: '#4C8AC9', baby_shower: '#C96B8A',
 }
 
 interface EventCardProps {
     evento: EventoConStats
-    /** Override the link destination. Defaults to /eventos/[id] */
     href?: string
-    /** Hide the delete button (false for planner role). Default: true */
     canDelete?: boolean
 }
 
@@ -49,10 +40,10 @@ export function EventCard({ evento, href, canDelete = true }: EventCardProps) {
 
     const diasLabel =
         evento.diasRestantes < 0
-            ? `Hace ${Math.abs(evento.diasRestantes)} días`
+            ? `Hace ${Math.abs(evento.diasRestantes)}d`
             : evento.diasRestantes === 0
                 ? '¡Hoy!'
-                : `${evento.diasRestantes} días`
+                : `${evento.diasRestantes}d`
 
     const diasColor =
         evento.diasRestantes < 0
@@ -61,281 +52,331 @@ export function EventCard({ evento, href, canDelete = true }: EventCardProps) {
                 ? '#C97A2A'
                 : 'var(--color-olive)'
 
+    const fechaLabel = new Date(evento.fecha_evento + 'T12:00:00').toLocaleDateString('es-AR', {
+        day: 'numeric', month: 'short', year: 'numeric',
+    })
+
+    const clientUrl = typeof window !== 'undefined'
+        ? `${window.location.origin}/evento/${evento.token_acceso}`
+        : `/evento/${evento.token_acceso}`
+
     function handleDelete() {
-        startTransition(async () => {
-            await deleteEvento(evento.id)
-        })
+        startTransition(async () => { await deleteEvento(evento.id) })
     }
 
+    const editHref = href ?? `/eventos/${evento.id}`
+
     return (
-        <div className="card" style={styles.card}>
-            {/* Top row */}
-            <div style={styles.topRow}>
-                <div style={styles.titleGroup}>
-                    <span
-                        style={{
-                            ...styles.tipoBadge,
-                            backgroundColor: tipoColor + '18',
-                            color: tipoColor,
-                            borderColor: tipoColor + '40',
-                        }}
-                    >
+        <div className="card" style={st.card}>
+            {/* ── LEFT: main content ───────────────────────────────────────── */}
+            <div style={st.left}>
+                {/* Row 1: fecha + días · badge tipo */}
+                <div style={st.topRow}>
+                    <div style={st.topLeft}>
+                        <span style={{ color: diasColor, fontSize: '0.72rem', fontWeight: 500 }}>
+                            {fechaLabel}
+                            <span style={{ color: 'var(--color-text-muted)', margin: '0 0.3rem' }}>·</span>
+                            <strong>{diasLabel}</strong>
+                        </span>
+                        <Link href={editHref} style={st.nombre}>{evento.nombre}</Link>
+                    </div>
+                    <span style={{ ...st.tipoBadge, backgroundColor: tipoColor + '18', color: tipoColor, borderColor: tipoColor + '40' }}>
                         {tipoLabel}
                     </span>
-                    <Link href={href ?? `/eventos/${evento.id}`} style={styles.nombre}>
-                        {evento.nombre}
-                    </Link>
                 </div>
 
-                <div style={{ ...styles.diasBadge, color: diasColor }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                        <line x1="16" y1="2" x2="16" y2="6" />
-                        <line x1="8" y1="2" x2="8" y2="6" />
-                        <line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                    {new Date(evento.fecha_evento + 'T12:00:00').toLocaleDateString('es-AR', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                    })}
-                    &nbsp;·&nbsp;
-                    <strong>{diasLabel}</strong>
-                </div>
-            </div>
+                {/* Row 2: segmented bar + planner */}
+                <div style={st.midRow}>
+                    <div style={st.barWrap}>
+                        {evento.fases.length > 0 ? (
+                            <>
+                                <div style={{ display: 'flex', gap: '3px', height: '5px', marginBottom: '4px' }}>
+                                    {evento.fases.map((f, i) => {
+                                        const pct = f.total === 0 ? 0 : Math.round((f.completadas / f.total) * 100)
+                                        const bg = f.total === 0
+                                            ? 'var(--color-cream-dark)'
+                                            : pct === 100 ? 'var(--color-olive)'
+                                                : pct > 0 ? 'var(--color-gold)'
+                                                    : 'var(--color-cream-dark)'
+                                        return (
+                                            <div key={i} title={`${f.nombre}: ${pct}%`}
+                                                style={{ flex: 1, backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden', position: 'relative' }}>
+                                                <div style={{ position: 'absolute', inset: 0, width: `${pct}%`, backgroundColor: bg, borderRadius: '99px', transition: 'width 0.4s ease' }} />
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                                <div style={{ display: 'flex', gap: '3px' }}>
+                                    {evento.fases.map((f, i) => (
+                                        <div key={i} style={{ flex: 1, minWidth: 0, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.6rem', color: 'var(--color-text-muted)' }}>
+                                            {f.nombre}
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        ) : (
+                            <div style={st.simpleBar}>
+                                <div style={{ ...st.simpleBarFill, width: `${evento.porcentajeAvance}%`, backgroundColor: evento.porcentajeAvance === 100 ? 'var(--color-olive)' : 'var(--color-gold)' }} />
+                            </div>
+                        )}
+                    </div>
 
-            {/* Progress */}
-            <div style={styles.progressSection}>
-                <div style={styles.progressHeader}>
-                    <span style={styles.progressLabel}>Avance</span>
-                    <span style={styles.progressValue}>
-                        {evento.porcentajeAvance}%
-                        <span style={styles.progressCount}>
-                            &nbsp;({evento.tareasCompletadas}/{evento.totalTareas} tareas)
+                    <div style={st.midRight}>
+                        <span style={st.pct}>
+                            {evento.porcentajeAvance}%
+                            <span style={st.pctCount}> ({evento.tareasCompletadas}/{evento.totalTareas})</span>
                         </span>
-                    </span>
-                </div>
-                <div style={styles.progressBar}>
-                    <div
-                        style={{
-                            ...styles.progressFill,
-                            width: `${evento.porcentajeAvance}%`,
-                            backgroundColor:
-                                evento.porcentajeAvance === 100 ? 'var(--color-olive)' : 'var(--color-gold)',
-                        }}
-                    />
+                        {evento.plannerNombre && (
+                            <span style={st.planner}>
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+                                </svg>
+                                {evento.plannerNombre}
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
 
-            {/* Planner */}
-            {evento.plannerNombre && (
-                <p style={styles.plannerRow}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                        <circle cx="12" cy="7" r="4" />
+            {/* ── DIVIDER ──────────────────────────────────────────────────── */}
+            <div style={st.divider} />
+
+            {/* ── RIGHT: icon buttons stacked vertically ──────────────────── */}
+            <div style={st.actions}>
+                {/* Link cliente */}
+                <CopyIconButton url={clientUrl} />
+
+                {/* Editar */}
+                <Link href={editHref} style={st.iconBtn} title="Editar">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                     </svg>
-                    {evento.plannerNombre}
-                </p>
-            )}
+                </Link>
 
-            {/* Actions */}
-            <div style={styles.actions}>
-                <div style={styles.actionsLeft}>
-                    <CopyLinkButton token={evento.token_acceso} />
-                    <Link href={href ?? `/eventos/${evento.id}`} className="btn-ghost" style={styles.editBtn}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                        Editar
-                    </Link>
-                </div>
-
-                <div style={styles.actionsRight}>
-                    {canDelete && (confirmDelete ? (
-                        <div style={styles.confirmRow}>
-                            <span style={styles.confirmText}>¿Eliminar?</span>
-                            <button
-                                onClick={handleDelete}
-                                disabled={isPending}
-                                style={styles.confirmYes}
-                            >
-                                {isPending ? 'Eliminando…' : 'Sí, eliminar'}
+                {/* Eliminar */}
+                {canDelete && (
+                    confirmDelete ? (
+                        <div style={st.confirmMini}>
+                            <button onClick={handleDelete} disabled={isPending} style={st.confirmYes} title="Confirmar eliminación">
+                                {isPending ? '…' : '✓'}
                             </button>
-                            <button
-                                onClick={() => setConfirmDelete(false)}
-                                style={styles.confirmNo}
-                            >
-                                Cancelar
-                            </button>
+                            <button onClick={() => setConfirmDelete(false)} style={st.confirmNo} title="Cancelar">✕</button>
                         </div>
                     ) : (
-                        <button
-                            onClick={() => setConfirmDelete(true)}
-                            className="btn-ghost"
-                            style={styles.deleteBtn}
-                        >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <button onClick={() => setConfirmDelete(true)} style={{ ...st.iconBtn, color: 'var(--color-error)' }} title="Eliminar">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
                             </svg>
-                            Eliminar
                         </button>
-                    ))}
-                </div>
+                    )
+                )}
             </div>
         </div>
     )
 }
 
-const styles: Record<string, React.CSSProperties> = {
+// ─── Copy icon button (internal, no text) ─────────────────────────────────────
+
+function CopyIconButton({ url }: { url: string }) {
+    const [copied, setCopied] = useState(false)
+
+    async function handleCopy() {
+        try { await navigator.clipboard.writeText(url) }
+        catch {
+            const ta = document.createElement('textarea')
+            ta.value = url; document.body.appendChild(ta); ta.select()
+            document.execCommand('copy'); document.body.removeChild(ta)
+        }
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+    }
+
+    return (
+        <button
+            onClick={handleCopy}
+            style={{ ...st.iconBtn, color: copied ? 'var(--color-olive)' : undefined }}
+            title={copied ? '¡Copiado!' : 'Copiar link cliente'}
+        >
+            {copied ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="20 6 9 17 4 12" />
+                </svg>
+            ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+            )}
+        </button>
+    )
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const st: Record<string, React.CSSProperties> = {
     card: {
-        padding: '1.5rem',
+        padding: '1.25rem 1rem 1.25rem 1.5rem',
+        display: 'flex',
+        flexDirection: 'row',
+        gap: '0',
+        alignItems: 'stretch',
+    },
+    // Left content
+    left: {
+        flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        gap: '1rem',
-        transition: 'box-shadow 0.2s ease',
+        gap: '0.85rem',
+        minWidth: 0,
+        paddingRight: '1rem',
     },
     topRow: {
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'space-between',
-        gap: '1rem',
-        flexWrap: 'wrap',
+        gap: '0.75rem',
     },
-    titleGroup: {
+    topLeft: {
         display: 'flex',
         flexDirection: 'column',
-        gap: '0.4rem',
-    },
-    tipoBadge: {
-        display: 'inline-block',
-        fontSize: '0.68rem',
-        fontWeight: 600,
-        letterSpacing: '0.07em',
-        textTransform: 'uppercase',
-        padding: '0.2rem 0.55rem',
-        borderRadius: '20px',
-        border: '1px solid',
-        width: 'fit-content',
+        gap: '0.2rem',
+        minWidth: 0,
     },
     nombre: {
         fontFamily: 'var(--font-serif)',
-        fontSize: '1.15rem',
+        fontSize: '1.05rem',
         fontWeight: 600,
         color: 'var(--color-text)',
         textDecoration: 'none',
         lineHeight: 1.3,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        maxWidth: '420px',
+        display: 'block',
     },
-    diasBadge: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.3rem',
-        fontSize: '0.8rem',
+    tipoBadge: {
+        display: 'inline-block',
+        fontSize: '0.62rem',
+        fontWeight: 600,
+        letterSpacing: '0.07em',
+        textTransform: 'uppercase',
+        padding: '0.2rem 0.5rem',
+        borderRadius: '20px',
+        border: '1px solid',
         whiteSpace: 'nowrap',
         flexShrink: 0,
+        alignSelf: 'flex-start',
     },
-    progressSection: {
+    midRow: {
         display: 'flex',
-        flexDirection: 'column',
-        gap: '0.4rem',
-    },
-    progressHeader: {
-        display: 'flex',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        gap: '0.75rem',
     },
-    progressLabel: {
-        fontSize: '0.75rem',
-        fontWeight: 500,
-        color: 'var(--color-text-muted)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
+    barWrap: {
+        flex: 1,
+        minWidth: 0,
     },
-    progressValue: {
-        fontSize: '0.8rem',
-        fontWeight: 600,
-        color: 'var(--color-text)',
-    },
-    progressCount: {
-        fontWeight: 400,
-        color: 'var(--color-text-muted)',
-    },
-    progressBar: {
-        height: '6px',
+    simpleBar: {
+        height: '5px',
         backgroundColor: 'var(--color-cream-dark)',
         borderRadius: '99px',
         overflow: 'hidden',
     },
-    progressFill: {
+    simpleBarFill: {
         height: '100%',
         borderRadius: '99px',
         transition: 'width 0.4s ease',
     },
-    plannerRow: {
+    midRight: {
         display: 'flex',
-        alignItems: 'center',
-        gap: '0.35rem',
-        fontSize: '0.8rem',
-        color: 'var(--color-text-muted)',
+        flexDirection: 'column',
+        alignItems: 'flex-end',
+        gap: '0.15rem',
+        flexShrink: 0,
     },
+    pct: {
+        fontSize: '0.78rem',
+        fontWeight: 600,
+        color: 'var(--color-text)',
+        whiteSpace: 'nowrap',
+    },
+    pctCount: {
+        fontWeight: 400,
+        color: 'var(--color-text-muted)',
+        fontSize: '0.7rem',
+    },
+    planner: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.2rem',
+        fontSize: '0.7rem',
+        color: 'var(--color-text-muted)',
+        whiteSpace: 'nowrap',
+    },
+    // Divider
+    divider: {
+        width: '1px',
+        backgroundColor: 'var(--color-border)',
+        alignSelf: 'stretch',
+        flexShrink: 0,
+    },
+    // Right actions
     actions: {
         display: 'flex',
-        justifyContent: 'space-between',
+        flexDirection: 'column',
         alignItems: 'center',
-        paddingTop: '0.5rem',
-        borderTop: '1px solid var(--color-border)',
-        flexWrap: 'wrap',
-        gap: '0.5rem',
+        justifyContent: 'space-evenly',
+        gap: '0.25rem',
+        paddingLeft: '0.85rem',
+        flexShrink: 0,
     },
-    actionsLeft: {
-        display: 'flex',
-        gap: '0.5rem',
-        alignItems: 'center',
-    },
-    actionsRight: {
-        display: 'flex',
-        alignItems: 'center',
-    },
-    editBtn: {
-        fontSize: '0.78rem',
-        padding: '0.35rem 0.75rem',
-        gap: '0.35rem',
-    },
-    deleteBtn: {
-        fontSize: '0.78rem',
-        padding: '0.35rem 0.75rem',
-        gap: '0.35rem',
-        color: 'var(--color-error)',
-        borderColor: 'rgba(200,75,75,0.25)',
-    },
-    confirmRow: {
+    iconBtn: {
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        color: 'var(--color-text-muted)',
         display: 'flex',
         alignItems: 'center',
-        gap: '0.5rem',
+        justifyContent: 'center',
+        padding: '0.4rem',
+        borderRadius: 'var(--radius-sm)',
+        transition: 'background 0.15s, color 0.15s',
+        textDecoration: 'none',
     },
-    confirmText: {
-        fontSize: '0.8rem',
-        color: 'var(--color-error)',
-        fontWeight: 500,
+    confirmMini: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.2rem',
+        alignItems: 'center',
     },
     confirmYes: {
-        fontSize: '0.78rem',
-        padding: '0.3rem 0.75rem',
+        fontSize: '0.7rem',
+        width: '24px',
+        height: '24px',
         backgroundColor: 'var(--color-error)',
         color: 'white',
         border: 'none',
-        borderRadius: 'var(--radius-sm)',
+        borderRadius: '4px',
         cursor: 'pointer',
         fontFamily: 'var(--font-sans)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     confirmNo: {
-        fontSize: '0.78rem',
-        padding: '0.3rem 0.75rem',
+        fontSize: '0.7rem',
+        width: '24px',
+        height: '24px',
         backgroundColor: 'transparent',
         color: 'var(--color-text-muted)',
         border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-sm)',
+        borderRadius: '4px',
         cursor: 'pointer',
         fontFamily: 'var(--font-sans)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 }

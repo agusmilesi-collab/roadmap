@@ -70,6 +70,48 @@ const TIPO_COLORS: Record<string, string> = {
     boda: '#C9A84C', quince: '#8A6DAE', cumple: '#4C8AC9', baby_shower: '#C96B8A',
 }
 
+// ─── Segmented progress bar ───────────────────────────────────────────────────
+
+function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
+    if (fases.length === 0) return null
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {/* Segments row */}
+            <div style={{ display: 'flex', gap: '3px', height: '6px' }}>
+                {fases.map((fase) => {
+                    const total = fase.tareas.length
+                    const done = fase.tareas.filter((t) => t.completada).length
+                    const pct = total === 0 ? 0 : Math.round((done / total) * 100)
+                    const bg = total === 0
+                        ? 'var(--color-cream-dark)'
+                        : pct === 100
+                            ? 'var(--color-olive)'
+                            : pct > 0
+                                ? 'var(--color-gold)'
+                                : 'var(--color-cream-dark)'
+                    return (
+                        <div
+                            key={fase.id}
+                            title={`${fase.nombre}: ${pct}%`}
+                            style={{ flex: 1, backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden', position: 'relative' }}
+                        >
+                            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, backgroundColor: bg, borderRadius: '99px', transition: 'width 0.3s ease, background-color 0.3s ease' }} />
+                        </div>
+                    )
+                })}
+            </div>
+            {/* Labels row */}
+            <div style={{ display: 'flex', gap: '3px' }}>
+                {fases.map((fase) => (
+                    <div key={fase.id} style={{ flex: 1, minWidth: 0, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.65rem', color: 'var(--color-text-muted)', lineHeight: 1 }}>
+                        {fase.nombre}
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 interface Props {
@@ -87,12 +129,14 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
     const [editingHeader, setEditingHeader] = useState(false)
     const [editNombre, setEditNombre] = useState(evento.nombre)
     const [editPlannerId, setEditPlannerId] = useState(plannerId ?? '')
+    const [editFecha, setEditFecha] = useState(evento.fecha_evento)
     const [isSavingHeader, startSavingHeader] = useTransition()
 
     function handleSaveHeader() {
         startSavingHeader(async () => {
             await updateEvento(evento.id, {
                 nombre: editNombre.trim() || evento.nombre,
+                fecha_evento: editFecha || evento.fecha_evento,
                 ...(canChangePlanner ? { planner_id: editPlannerId || null } : {}),
             })
             setEditingHeader(false)
@@ -134,7 +178,16 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                                     style={{ fontSize: '1rem', fontFamily: 'var(--font-serif)' }}
                                 />
                             </div>
-                            {allPlanners.length > 0 && (
+                            <div className="form-group" style={{ minWidth: '160px' }}>
+                                <label className="form-label">Fecha del evento</label>
+                                <input
+                                    type="date"
+                                    value={editFecha}
+                                    onChange={e => setEditFecha(e.target.value)}
+                                    className="form-input"
+                                />
+                            </div>
+                            {canChangePlanner && allPlanners.length > 0 && (
                                 <div className="form-group" style={{ minWidth: '200px' }}>
                                     <label className="form-label">Planner asignado</label>
                                     <select
@@ -155,7 +208,7 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                                 {isSavingHeader ? 'Guardando…' : 'Guardar'}
                             </button>
                             <button
-                                onClick={() => { setEditingHeader(false); setEditNombre(evento.nombre); setEditPlannerId(plannerId ?? '') }}
+                                onClick={() => { setEditingHeader(false); setEditNombre(evento.nombre); setEditPlannerId(plannerId ?? ''); setEditFecha(evento.fecha_evento) }}
                                 className="btn-ghost"
                                 style={{ fontSize: '0.82rem', padding: '0.45rem 0.85rem' }}
                             >
@@ -175,7 +228,7 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                                 <button
                                     onClick={() => setEditingHeader(true)}
                                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '0.2rem', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                                    title="Editar nombre y planner"
+                                    title="Editar nombre, fecha y planner"
                                 >
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -213,10 +266,10 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                     </div>
                 )}
 
-                {/* Progress bar — always visible */}
+                {/* Segmented Progress bar — always visible */}
                 {!editingHeader && (
-                    <div style={styles.progressBar}>
-                        <div style={{ ...styles.progressFill, width: `${avance}%`, backgroundColor: avance === 100 ? 'var(--color-olive)' : 'var(--color-gold)' }} />
+                    <div style={{ marginTop: '1rem' }}>
+                        <SegmentedProgressBar fases={evento.fases} />
                     </div>
                 )}
             </div>
@@ -260,8 +313,6 @@ const styles: Record<string, React.CSSProperties> = {
     statBox: { display: 'flex', flexDirection: 'column', gap: '0.2rem', minWidth: '80px' },
     statLabel: { fontSize: '0.7rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)' },
     statValue: { fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text)' },
-    progressBar: { height: '6px', backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden' },
-    progressFill: { height: '100%', borderRadius: '99px', transition: 'width 0.3s ease' },
     tabs: { display: 'flex', gap: '0.5rem' },
     tabBtn: { padding: '0.6rem 1.25rem', fontSize: '0.9rem', fontFamily: 'var(--font-sans)', fontWeight: 500, background: 'var(--color-white)', border: '1.5px solid var(--color-border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--color-text-muted)', transition: 'all 0.15s ease' },
     tabBtnActive: { borderColor: 'var(--color-gold)', color: 'var(--color-gold-dark)', backgroundColor: 'rgba(201,168,76,0.06)' },

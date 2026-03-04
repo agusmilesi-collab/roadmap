@@ -18,7 +18,7 @@ interface EventoRow {
     fecha_evento: string
     token_acceso: string
     planners: { nombre: string } | { nombre: string }[] | null
-    fases: { tareas: { id: string; completada: boolean }[] | null }[] | null
+    fases: { nombre: string; orden: number; tareas: { id: string; completada: boolean }[] | null }[] | null
 }
 
 export default async function DashboardPage() {
@@ -35,6 +35,8 @@ export default async function DashboardPage() {
       token_acceso,
       planners ( nombre ),
       fases (
+        nombre,
+        orden,
         tareas ( id, completada )
       )
     `)
@@ -64,6 +66,14 @@ export default async function DashboardPage() {
                 ? (e.planners as { nombre: string }).nombre
                 : null
 
+        const fasesStats = (e.fases ?? [])
+            .sort((a, b) => a.orden - b.orden)
+            .map((f) => ({
+                nombre: f.nombre,
+                total: (f.tareas ?? []).length,
+                completadas: (f.tareas ?? []).filter((t) => t.completada).length,
+            }))
+
         return {
             id: e.id,
             nombre: e.nombre,
@@ -75,6 +85,7 @@ export default async function DashboardPage() {
             totalTareas,
             tareasCompletadas,
             plannerNombre,
+            fases: fasesStats,
         }
     })
 

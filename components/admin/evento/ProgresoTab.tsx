@@ -148,15 +148,22 @@ function FaseCard({
             {/* Tareas */}
             {fase.tareas.length > 0 && (
                 <div style={styles.tareasList}>
-                    {fase.tareas.map((tarea) => (
-                        <TareaRow
-                            key={tarea.id}
-                            tarea={tarea}
-                            eventoId={eventoId}
-                            isExpanded={expandedTareaId === tarea.id}
-                            onToggle={() => setExpandedTareaId(expandedTareaId === tarea.id ? null : tarea.id)}
-                        />
-                    ))}
+                    {[...fase.tareas]
+                        .sort((a, b) => {
+                            if (!a.fecha && !b.fecha) return 0
+                            if (!a.fecha) return 1
+                            if (!b.fecha) return -1
+                            return a.fecha.localeCompare(b.fecha)
+                        })
+                        .map((tarea) => (
+                            <TareaRow
+                                key={tarea.id}
+                                tarea={tarea}
+                                eventoId={eventoId}
+                                isExpanded={expandedTareaId === tarea.id}
+                                onToggle={() => setExpandedTareaId(expandedTareaId === tarea.id ? null : tarea.id)}
+                            />
+                        ))}
                 </div>
             )}
 
@@ -176,20 +183,24 @@ function FaseCard({
 // ─── TareaRow ─────────────────────────────────────────────────────────────────
 
 function TareaRow({ tarea, eventoId, isExpanded, onToggle }: {
-    tarea: Tarea; eventoId: string; isExpanded: boolean; onToggle: () => void
+    tarea: Tarea; eventoId: string; isExpanded: boolean; onToggle: () => void;
+    isLast?: boolean
 }) {
     return (
         <div style={{ ...styles.tareaRow, borderColor: isExpanded ? 'var(--color-gold)' : 'var(--color-border)' }}>
             {/* Summary row (always visible) */}
             <button onClick={onToggle} style={styles.tareaRowBtn}>
                 <span style={styles.tareaIcon}>{TIPO_ICONS[tarea.tipo] ?? '📌'}</span>
-                <span style={styles.tareaNombre}>{tarea.nombre}</span>
+                <span style={{
+                    ...styles.tareaNombre,
+                    color: tarea.estado === 'completada' ? 'var(--color-text-muted)' : 'var(--color-text)',
+                }}>{tarea.nombre}</span>
                 <span style={{ ...styles.estadoBadge, ...ESTADO_STYLES[tarea.estado] }}>
                     {ESTADO_OPTIONS.find(o => o.value === tarea.estado)?.label ?? tarea.estado}
                 </span>
                 {tarea.fecha && (
                     <span style={styles.tareaFecha}>
-                        {new Date(tarea.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}
+                        {new Date(tarea.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })}
                     </span>
                 )}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, color: 'var(--color-text-muted)' }}>

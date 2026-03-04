@@ -4,9 +4,10 @@ import { useState } from 'react'
 
 interface CopyLinkButtonProps {
     token: string
+    compact?: boolean
 }
 
-export function CopyLinkButton({ token }: CopyLinkButtonProps) {
+export function CopyLinkButton({ token, compact }: CopyLinkButtonProps) {
     const [copied, setCopied] = useState(false)
 
     async function handleCopy() {
@@ -30,9 +31,11 @@ export function CopyLinkButton({ token }: CopyLinkButtonProps) {
             onClick={handleCopy}
             className="btn-ghost"
             style={{
-                fontSize: '0.78rem',
-                padding: '0.35rem 0.75rem',
-                gap: '0.35rem',
+                fontSize: compact ? '0.75rem' : '0.78rem',
+                padding: compact ? '0.28rem 0' : '0.35rem 0.75rem',
+                gap: compact ? '0.3rem' : '0.35rem',
+                width: compact ? '108px' : undefined,
+                justifyContent: compact ? 'center' : undefined,
                 color: copied ? 'var(--color-olive)' : undefined,
                 borderColor: copied ? 'var(--color-olive-light)' : undefined,
             }}
