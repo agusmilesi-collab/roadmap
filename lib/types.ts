@@ -75,6 +75,22 @@ export interface Rubro {
     fecha_sena: string | null
     notas: string | null
     orden: number
+    costo_total: number | null
+    descripcion_servicio: string | null
+    // joins
+    pagos?: PagoProveedor[]
+}
+
+export interface PagoProveedor {
+    id: string
+    rubro_id: string
+    monto: number
+    moneda: Moneda
+    tipo_cambio_snapshot: number | null
+    fecha: string
+    realizado: boolean
+    descripcion: string | null
+    created_at: string
 }
 
 export interface PlantillaFase {
@@ -115,7 +131,8 @@ export type Database = {
             fases: { Row: Fase; Insert: Omit<Fase, 'id' | 'tareas'>; Update: Partial<Omit<Fase, 'id' | 'tareas'>> }
             tareas: { Row: Tarea; Insert: Omit<Tarea, 'id' | 'acuerdos'>; Update: Partial<Omit<Tarea, 'id' | 'acuerdos'>> }
             acuerdos: { Row: Acuerdo; Insert: Omit<Acuerdo, 'id' | 'created_at'>; Update: Partial<Omit<Acuerdo, 'id'>> }
-            rubros: { Row: Rubro; Insert: Omit<Rubro, 'id'>; Update: Partial<Omit<Rubro, 'id'>> }
+            rubros: { Row: Rubro; Insert: Omit<Rubro, 'id' | 'pagos'>; Update: Partial<Omit<Rubro, 'id' | 'pagos'>> }
+            pagos_proveedor: { Row: PagoProveedor; Insert: Omit<PagoProveedor, 'id' | 'created_at'>; Update: Partial<Omit<PagoProveedor, 'id' | 'created_at'>> }
             plantillas_fases: { Row: PlantillaFase; Insert: Omit<PlantillaFase, 'id' | 'plantillas_tareas'>; Update: Partial<Omit<PlantillaFase, 'id' | 'plantillas_tareas'>> }
             plantillas_tareas: { Row: PlantillaTarea; Insert: Omit<PlantillaTarea, 'id'>; Update: Partial<Omit<PlantillaTarea, 'id'>> }
             plantillas_rubros: { Row: PlantillaRubro; Insert: Omit<PlantillaRubro, 'id'>; Update: Partial<Omit<PlantillaRubro, 'id'>> }

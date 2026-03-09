@@ -30,6 +30,12 @@ interface EventoDetailRow {
         monto_original: number | null; moneda: string; tipo_cambio_propio: number | null
         sena_pct: number | null; fecha_decision: string | null; fecha_sena: string | null
         notas: string | null; orden: number
+        costo_total: number | null; descripcion_servicio: string | null
+        pagos_proveedor: {
+            id: string; rubro_id: string; monto: number; moneda: string
+            tipo_cambio_snapshot: number | null; fecha: string
+            realizado: boolean; descripcion: string | null; created_at: string
+        }[]
     }[]
 }
 
@@ -59,7 +65,11 @@ export default async function EventoDetailPage({ params }: Props) {
       ),
       rubros (
         id, nombre, estado, proveedor, monto_original, moneda,
-        tipo_cambio_propio, sena_pct, fecha_decision, fecha_sena, notas, orden
+        tipo_cambio_propio, sena_pct, fecha_decision, fecha_sena, notas, orden,
+        costo_total, descripcion_servicio,
+        pagos_proveedor (
+          id, rubro_id, monto, moneda, tipo_cambio_snapshot, fecha, realizado, descripcion, created_at
+        )
       )
     `)
         .eq('id', id)
@@ -82,6 +92,12 @@ export default async function EventoDetailPage({ params }: Props) {
     const rubrosSorted = [...(evento.rubros ?? [])]
         .sort((a, b) => a.orden - b.orden)
         .filter((r) => { if (seenRubros.has(r.id)) return false; seenRubros.add(r.id); return true })
+        .map((r) => ({
+            ...r,
+            pagos_proveedor: [...(r.pagos_proveedor ?? [])].sort(
+                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            ),
+        }))
 
     const planner = evento.planners && !Array.isArray(evento.planners)
         ? (evento.planners as { nombre: string; email: string; telefono: string | null })

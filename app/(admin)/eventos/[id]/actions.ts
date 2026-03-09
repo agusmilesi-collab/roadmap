@@ -239,6 +239,8 @@ export async function updateRubro(
         fecha_decision: string | null
         fecha_sena: string | null
         notas: string | null
+        costo_total: number | null
+        descripcion_servicio: string | null
     }>
 ) {
     const supabase = await createServerSupabaseClient()
@@ -271,5 +273,55 @@ export async function updateEvento(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from('eventos').update(data).eq('id', eventoId)
     revalidatePath('/dashboard')
+    revalidate(eventoId)
+}
+
+// ─── Pagos proveedor ──────────────────────────────────────────────────────────
+
+export async function createPago(
+    rubroId: string,
+    eventoId: string,
+    data: {
+        monto: number
+        moneda: Moneda
+        fecha: string
+        descripcion?: string | null
+    }
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('pagos_proveedor').insert({
+        rubro_id: rubroId,
+        monto: data.monto,
+        moneda: data.moneda,
+        fecha: data.fecha,
+        descripcion: data.descripcion ?? null,
+        realizado: false,
+    })
+    revalidate(eventoId)
+}
+
+export async function updatePago(
+    id: string,
+    eventoId: string,
+    data: Partial<{
+        monto: number
+        moneda: Moneda
+        fecha: string
+        realizado: boolean
+        tipo_cambio_snapshot: number | null
+        descripcion: string | null
+    }>
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('pagos_proveedor').update(data).eq('id', id)
+    revalidate(eventoId)
+}
+
+export async function deletePago(id: string, eventoId: string) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('pagos_proveedor').delete().eq('id', id)
     revalidate(eventoId)
 }

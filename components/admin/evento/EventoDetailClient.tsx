@@ -33,6 +33,18 @@ export interface Fase {
     tareas: Tarea[]
 }
 
+export interface PagoProveedor {
+    id: string
+    rubro_id: string
+    monto: number
+    moneda: string
+    tipo_cambio_snapshot: number | null
+    fecha: string
+    realizado: boolean
+    descripcion: string | null
+    created_at: string
+}
+
 export interface Rubro {
     id: string
     nombre: string
@@ -46,6 +58,9 @@ export interface Rubro {
     fecha_sena: string | null
     notas: string | null
     orden: number
+    costo_total: number | null
+    descripcion_servicio: string | null
+    pagos_proveedor?: PagoProveedor[]
 }
 
 export interface EventoData {
