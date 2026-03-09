@@ -183,6 +183,65 @@ export async function updatePlantillaNombreDisplay(tipo_evento: string, nombre_d
     redirect(`/plantillas?tipo=${encodeURIComponent(tipo_evento)}`)
 }
 
+// ─── Import plantilla from CSV (returns tipo_evento, no redirect) ─────────────
+
+export async function importPlantillaCSV(
+    nombre: string,
+    fases: Array<{
+        nombre: string
+        descripcion: string | null
+        orden: number
+        tareas: Array<{
+            nombre: string
+            tipo: string
+            diasAntes: number | null
+            orden: number
+        }>
+    }>
+): Promise<{ tipo_evento: string } | { error: string }> {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+
+    const slug = nombre
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_|_$/g, '')
+    const tipo_evento = `custom_${slug}_${Date.now()}`
+
+    for (const fase of fases) {
+        const { data: faseRow, error: faseErr } = await db
+            .from('plantillas_fases')
+            .insert({
+                tipo_evento,
+                nombre: fase.nombre,
+                descripcion: fase.descripcion || null,
+                orden: fase.orden,
+                es_custom: true,
+                nombre_display: nombre,
+            })
+            .select('id')
+            .single()
+
+        if (faseErr || !faseRow) return { error: faseErr?.message ?? 'Error creando fase' }
+
+        for (const tarea of fase.tareas) {
+            const { error: tareaErr } = await db.from('plantillas_tareas').insert({
+                plantilla_fase_id: faseRow.id,
+                nombre: tarea.nombre,
+                tipo: tarea.tipo,
+                meses_antes: tarea.diasAntes,
+                orden: tarea.orden,
+            })
+            if (tareaErr) return { error: tareaErr.message }
+        }
+    }
+
+    revalidatePath('/plantillas')
+    return { tipo_evento }
+}
+
 // ─── Delete custom plantilla (all its fases + tareas) ────────────────────────
 
 export async function deleteCustomPlantilla(tipo_evento: string): Promise<{ error: string } | void> {

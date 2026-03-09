@@ -16,6 +16,7 @@ import {
     createCustomPlantilla,
     deleteCustomPlantilla,
     updatePlantillaNombreDisplay,
+    importPlantillaCSV,
 } from '@/app/(admin)/plantillas/actions'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -167,6 +168,7 @@ export function PlantillasClient({
     const [showNewModal, setShowNewModal] = useState(false)
     const [newNombre, setNewNombre] = useState('')
     const [creating, setCreating] = useState(false)
+    const [showCsvModal, setShowCsvModal] = useState(false)
     const [localCustomTipos, setLocalCustomTipos] = useState(customTipos)
     const [confirmDeleteCustom, setConfirmDeleteCustom] = useState<string | null>(null)
     const [editingTipo, setEditingTipo] = useState<string | null>(null)
@@ -362,6 +364,16 @@ export function PlantillasClient({
                 >
                     + Nueva
                 </div>
+
+                {/* Importar CSV */}
+                <div
+                    role="button"
+                    className="plantilla-tab-pill plantilla-tab-pill--csv"
+                    onClick={() => { setShowCsvModal(true); setCustomDropdownOpen(false) }}
+                    title="Importar plantilla desde CSV"
+                >
+                    ↑ CSV
+                </div>
             </div>
 
             {/* Inline editor for plantilla name */}
@@ -425,6 +437,17 @@ export function PlantillasClient({
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* CSV import modal */}
+            {showCsvModal && (
+                <CsvImportModal
+                    onClose={() => setShowCsvModal(false)}
+                    onImported={(tipo_evento) => {
+                        setShowCsvModal(false)
+                        router.push(`/plantillas?tipo=${encodeURIComponent(tipo_evento)}`)
+                    }}
+                />
             )}
 
             {/* Info banner */}
@@ -841,6 +864,250 @@ function AddFaseForm({ tipoEvento, onError }: { tipoEvento: string; onError: (e:
                 <button className="btn-gold" onClick={submit} disabled={isPending || !nombre.trim()}>
                     {isPending ? 'Guardando...' : 'Crear fase'}
                 </button>
+            </div>
+        </div>
+    )
+}
+
+// ─── CsvImportModal ───────────────────────────────────────────────────────────
+
+interface CsvParsedTarea {
+    nombre: string
+    tipo: string
+    diasAntes: number | null
+    orden: number
+}
+
+interface CsvParsedFase {
+    nombre: string
+    descripcion: string | null
+    orden: number
+    tareas: CsvParsedTarea[]
+}
+
+const VALID_TIPOS = ['reunion', 'entregable', 'decision', 'pago']
+
+function parseCsvText(text: string): CsvParsedFase[] {
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+    if (lines.length < 2) throw new Error('El archivo está vacío o solo tiene el encabezado')
+
+    const rows = lines.slice(1).map((line) => {
+        const cols = line.split(',').map((c) => c.trim())
+        return {
+            fase: cols[0] ?? '',
+            descripcion_fase: cols[1] ?? '',
+            orden_fase: parseInt(cols[2]) || 0,
+            tarea: cols[3] ?? '',
+            tipo: cols[4] ?? 'entregable',
+            dias_antes: cols[5] !== undefined && cols[5] !== '' ? parseInt(cols[5]) : null,
+            orden_tarea: parseInt(cols[6]) || 0,
+        }
+    }).filter((r) => r.fase && r.tarea)
+
+    if (rows.length === 0) throw new Error('No se encontraron filas válidas (fase y tarea son requeridos)')
+
+    const faseMap = new Map<string, CsvParsedFase>()
+    for (const row of rows) {
+        if (!faseMap.has(row.fase)) {
+            faseMap.set(row.fase, {
+                nombre: row.fase,
+                descripcion: row.descripcion_fase || null,
+                orden: row.orden_fase,
+                tareas: [],
+            })
+        }
+        const fase = faseMap.get(row.fase)!
+        fase.tareas.push({
+            nombre: row.tarea,
+            tipo: VALID_TIPOS.includes(row.tipo) ? row.tipo : 'entregable',
+            diasAntes: row.dias_antes !== null && !isNaN(row.dias_antes) ? row.dias_antes : null,
+            orden: row.orden_tarea,
+        })
+    }
+
+    return Array.from(faseMap.values())
+        .sort((a, b) => a.orden - b.orden)
+        .map((f) => ({ ...f, tareas: [...f.tareas].sort((a, b) => a.orden - b.orden) }))
+}
+
+const TIPO_LABELS_CSV: Record<string, string> = {
+    reunion: '📅 Reunión',
+    entregable: '📄 Entregable',
+    decision: '✅ Decisión',
+    pago: '💳 Pago',
+}
+
+function CsvImportModal({
+    onClose,
+    onImported,
+}: {
+    onClose: () => void
+    onImported: (tipo_evento: string) => void
+}) {
+    const [nombre, setNombre] = useState('')
+    const [parsed, setParsed] = useState<CsvParsedFase[] | null>(null)
+    const [parseError, setParseError] = useState<string | null>(null)
+    const [fileName, setFileName] = useState('')
+    const [importing, setImporting] = useState(false)
+    const [importError, setImportError] = useState<string | null>(null)
+    const [success, setSuccess] = useState(false)
+    const fileRef = useRef<HTMLInputElement>(null)
+
+    function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0]
+        if (!file) return
+        setFileName(file.name)
+        setParseError(null)
+        setParsed(null)
+        const reader = new FileReader()
+        reader.onload = (ev) => {
+            try {
+                const fases = parseCsvText(ev.target?.result as string)
+                setParsed(fases)
+            } catch (err) {
+                setParseError((err as Error).message)
+            }
+        }
+        reader.readAsText(file)
+    }
+
+    async function handleImport() {
+        if (!nombre.trim() || !parsed?.length) return
+        setImporting(true)
+        setImportError(null)
+        const res = await importPlantillaCSV(nombre.trim(), parsed)
+        setImporting(false)
+        if ('error' in res) {
+            setImportError(res.error)
+            return
+        }
+        setSuccess(true)
+        setTimeout(() => onImported(res.tipo_evento), 1200)
+    }
+
+    const totalTareas = parsed?.reduce((s, f) => s + f.tareas.length, 0) ?? 0
+
+    return (
+        <div style={st.modalOverlay} onClick={onClose}>
+            <div
+                style={{ ...st.modal, maxWidth: '540px', maxHeight: '90vh', overflow: 'auto' }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <h3 style={st.modalTitle}>Importar plantilla desde CSV</h3>
+
+                {success ? (
+                    <div style={{ textAlign: 'center', padding: '1.5rem 0', color: '#2E7D32', fontSize: '1rem', fontWeight: 600 }}>
+                        ✓ Plantilla importada con éxito
+                    </div>
+                ) : (
+                    <>
+                        {/* Nombre */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                            <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Nombre de la plantilla *
+                            </label>
+                            <input
+                                className="form-input"
+                                placeholder="Ej: Despedida de Soltera"
+                                value={nombre}
+                                onChange={(e) => setNombre(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+
+                        {/* File picker */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                            <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Archivo CSV
+                            </label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    style={{ fontSize: '0.82rem', padding: '0.45rem 0.9rem' }}
+                                    onClick={() => fileRef.current?.click()}
+                                >
+                                    Seleccionar archivo
+                                </button>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                                    {fileName || 'Ningún archivo seleccionado'}
+                                </span>
+                            </div>
+                            <input
+                                ref={fileRef}
+                                type="file"
+                                accept=".csv,text/csv"
+                                style={{ display: 'none' }}
+                                onChange={handleFile}
+                            />
+                            <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' }}>
+                                Formato: <code style={{ backgroundColor: 'var(--color-cream-dark)', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>fase,descripcion_fase,orden_fase,tarea,tipo,dias_antes,orden_tarea</code>
+                            </p>
+                        </div>
+
+                        {parseError && (
+                            <div style={{ padding: '0.65rem 0.9rem', backgroundColor: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', fontSize: '0.82rem', color: '#B91C1C' }}>
+                                ⚠ {parseError}
+                            </div>
+                        )}
+
+                        {/* Preview */}
+                        {parsed && parsed.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <p style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Preview — {parsed.length} fase{parsed.length !== 1 ? 's' : ''}, {totalTareas} tarea{totalTareas !== 1 ? 's' : ''}
+                                </p>
+                                <div style={{ border: '1px solid var(--color-border)', borderRadius: '8px', overflow: 'hidden', maxHeight: '280px', overflowY: 'auto' }}>
+                                    {parsed.map((fase, fi) => (
+                                        <div key={fi} style={{ borderBottom: fi < parsed.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
+                                            <div style={{ padding: '0.55rem 0.85rem', backgroundColor: 'var(--color-cream)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-gold)', backgroundColor: 'rgba(201,168,76,0.12)', padding: '0.1rem 0.45rem', borderRadius: '20px' }}>
+                                                    F{fi + 1}
+                                                </span>
+                                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text)' }}>{fase.nombre}</span>
+                                                {fase.descripcion && (
+                                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>— {fase.descripcion}</span>
+                                                )}
+                                            </div>
+                                            {fase.tareas.map((tarea, ti) => (
+                                                <div key={ti} style={{ padding: '0.4rem 0.85rem 0.4rem 2rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderTop: '1px solid var(--color-border)' }}>
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', flexShrink: 0 }}>
+                                                        {TIPO_LABELS_CSV[tarea.tipo] ?? tarea.tipo}
+                                                    </span>
+                                                    <span style={{ fontSize: '0.83rem', flex: 1 }}>{tarea.nombre}</span>
+                                                    {tarea.diasAntes !== null && (
+                                                        <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', backgroundColor: 'var(--color-cream-dark)', padding: '0.1rem 0.4rem', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                                            {tarea.diasAntes}d antes
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {importError && (
+                            <div style={{ padding: '0.65rem 0.9rem', backgroundColor: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', fontSize: '0.82rem', color: '#B91C1C' }}>
+                                ⚠ {importError}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', paddingTop: '0.25rem' }}>
+                            <button className="btn-ghost" onClick={onClose} disabled={importing}>
+                                Cancelar
+                            </button>
+                            <button
+                                className="btn-primary"
+                                onClick={handleImport}
+                                disabled={importing || !nombre.trim() || !parsed?.length}
+                            >
+                                {importing ? 'Importando…' : 'Importar'}
+                            </button>
+                        </div>
+                    </>
+                )}
             </div>
         </div>
     )

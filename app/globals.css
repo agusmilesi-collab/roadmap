@@ -247,6 +247,17 @@ a:hover {
   color: var(--color-gold-dark);
 }
 
+.plantilla-tab-pill--csv {
+  border: 1px solid var(--color-gold);
+  color: var(--color-gold);
+  background: transparent;
+  font-size: 0.78rem;
+}
+.plantilla-tab-pill--csv:hover {
+  background: rgba(201, 168, 76, 0.08);
+  color: var(--color-gold-dark);
+}
+
 .plantillas-dropdown-trigger.plantilla-tab-pill--dropdown-open {
   border-color: var(--color-gold);
   background: rgba(201, 168, 76, 0.06);
