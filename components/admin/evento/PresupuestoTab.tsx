@@ -382,42 +382,43 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
                 {/* Color bar */}
                 <span style={{ width: 3, alignSelf: 'stretch', borderRadius: '99px', backgroundColor: rubroColor, flexShrink: 0 }} />
 
-                {/* 2-row content */}
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.3rem', textAlign: 'left' }}>
+                {/* 3-row content */}
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.28rem', textAlign: 'left' }}>
                     {/* Row 1: nombre · costo */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                        <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '0.75rem' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--color-text)' }}>
                             {rubro.nombre}
                         </span>
                         {costoNum > 0 && (
-                            <span style={{ fontSize: '0.82rem', fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0, color: '#2563EB' }}>
                                 {moneda} {fmt(costoNum)}
                             </span>
                         )}
                     </div>
-                    {/* Row 2: proveedor · badge + saldo + pagos */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
-                            {proveedor}
+                    {/* Row 2: proveedor · badge */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                            {proveedor || <span style={{ fontStyle: 'italic' }}>Sin proveedor</span>}
                         </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
-                            <span style={{ ...st.estadoBadge, ...ESTADO_STYLES[estado] }}>
-                                {ESTADO_OPTIONS.find(o => o.value === estado)?.label}
+                        <span style={{ ...st.estadoBadge, ...ESTADO_STYLES[estado], flexShrink: 0 }}>
+                            {ESTADO_OPTIONS.find(o => o.value === estado)?.label}
+                        </span>
+                    </div>
+                    {/* Row 3: saldo · resumen pagos */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                        {costoUSD > 0 ? (
+                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: saldoAPagarUSD <= 0 ? '#2E7D32' : '#D97706' }}>
+                                {estaSaldado ? '✓ Saldado' : `Saldo: USD ${fmt(Math.max(0, saldoAPagarUSD), 0)}`}
                             </span>
-                            {costoUSD > 0 && (
-                                <span style={{ fontSize: '0.78rem', fontWeight: 600, whiteSpace: 'nowrap', color: saldoAPagarUSD <= 0 ? '#2E7D32' : '#D97706' }}>
-                                    {estaSaldado ? '✓ Saldado' : `Saldo: USD ${fmt(Math.max(0, saldoAPagarUSD), 0)}`}
-                                </span>
-                            )}
-                            {pagos.length > 0 ? (
-                                <span style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                                    <span style={{ color: '#2E7D32', fontWeight: 500 }}>{pagosRealizados} ✓</span>
-                                    {pagosPendientes > 0 && <span style={{ color: 'var(--color-text-muted)' }}> · {pagosPendientes} pend.</span>}
-                                </span>
-                            ) : (
-                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Sin pagos</span>
-                            )}
-                        </div>
+                        ) : <span />}
+                        {pagos.length > 0 ? (
+                            <span style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                <span style={{ color: '#2E7D32', fontWeight: 500 }}>{pagosRealizados} ✓</span>
+                                {pagosPendientes > 0 && <span style={{ color: 'var(--color-text-muted)' }}> · {pagosPendientes} pend.</span>}
+                            </span>
+                        ) : (
+                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', flexShrink: 0 }}>Sin pagos</span>
+                        )}
                     </div>
                 </div>
 

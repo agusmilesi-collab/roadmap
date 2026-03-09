@@ -149,20 +149,26 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                                     const ft = fase.tareas.length
                                     const fc = fase.tareas.filter((t) => t.completada).length
                                     const fp = ft === 0 ? 0 : Math.round((fc / ft) * 100)
-                                    const bg = ft === 0
-                                        ? 'rgba(255,255,255,0.2)'
+                                    const hasVencida = fase.tareas.some((t) => {
+                                        if (t.completada || !t.fecha) return false
+                                        const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+                                        return new Date(t.fecha + 'T12:00:00') < hoy
+                                    })
+                                    const fillBg = hasVencida
+                                        ? '#EF4444'
                                         : fp === 100
-                                            ? '#6BA888'
+                                            ? '#7C8B70'
                                             : fp > 0
                                                 ? '#C9A84C'
-                                                : 'rgba(255,255,255,0.2)'
+                                                : '#D1D5DB'
+                                    const trackBg = ft === 0 || fp === 0 ? '#D1D5DB' : '#E5E7EB'
                                     return (
                                         <div
                                             key={fase.id}
-                                            title={`${fase.nombre}: ${fp}%`}
-                                            style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: '99px', overflow: 'hidden', position: 'relative' }}
+                                            title={`${fase.nombre}: ${fp}%${hasVencida ? ' ⚠ con tareas vencidas' : ''}`}
+                                            style={{ flex: 1, backgroundColor: trackBg, borderRadius: '99px', overflow: 'hidden', position: 'relative' }}
                                         >
-                                            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${fp}%`, backgroundColor: bg, borderRadius: '99px', transition: 'width 0.3s ease' }} />
+                                            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${fp}%`, backgroundColor: fillBg, borderRadius: '99px', transition: 'width 0.3s ease, background-color 0.3s ease' }} />
                                         </div>
                                     )
                                 })}
@@ -170,7 +176,7 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                             {/* Labels */}
                             <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
                                 {evento.fases.map((fase) => (
-                                    <div key={fase.id} style={{ flex: 1, minWidth: 0, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.62rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1 }}>
+                                    <div key={fase.id} style={{ flex: 1, minWidth: 0, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.62rem', color: '#6B7280', lineHeight: 1 }}>
                                         {fase.nombre}
                                     </div>
                                 ))}

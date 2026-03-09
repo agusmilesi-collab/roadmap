@@ -105,11 +105,11 @@ function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
                     const bg = hasVencida
                         ? '#EF4444'
                         : pct === 100
-                            ? 'var(--color-olive)'
+                            ? '#7C8B70'
                             : pct > 0
-                                ? 'var(--color-gold)'
-                                : 'var(--color-cream-dark)'
-                    const trackBg = total === 0 || pct === 0 ? '#D1D5DB' : 'var(--color-cream-dark)'
+                                ? '#C9A84C'
+                                : '#D1D5DB'
+                    const trackBg = total === 0 || pct === 0 ? '#D1D5DB' : '#E5E7EB'
                     return (
                         <div
                             key={fase.id}
@@ -134,7 +134,7 @@ function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
                             fontSize: '0.65rem',
-                            color: '#4B5563',
+                            color: '#6B7280',
                             lineHeight: 1,
                         }}
                     >
