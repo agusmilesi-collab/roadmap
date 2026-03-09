@@ -139,6 +139,7 @@ export async function updateTarea(
         fecha?: string | null
         resumen?: string | null
         completada?: boolean
+        fase_id?: string
     }
 ) {
     const supabase = await createServerSupabaseClient()

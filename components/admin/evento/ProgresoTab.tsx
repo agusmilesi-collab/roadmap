@@ -111,6 +111,7 @@ export function ProgresoTab({ fases: initialFases, eventoId }: { fases: Fase[]; 
                                     >
                                         <FaseCard
                                             fase={fase}
+                                            todasLasFases={fases}
                                             eventoId={eventoId}
                                             expandedTareaId={expandedTareaId}
                                             setExpandedTareaId={setExpandedTareaId}
@@ -148,11 +149,11 @@ export function ProgresoTab({ fases: initialFases, eventoId }: { fases: Fase[]; 
 // ─── FaseCard ─────────────────────────────────────────────────────────────────
 
 function FaseCard({
-    fase, eventoId, expandedTareaId, setExpandedTareaId,
+    fase, todasLasFases, eventoId, expandedTareaId, setExpandedTareaId,
     isAddingTarea, onToggleAddTarea, isEditing, onToggleEdit,
     dragHandleProps, onReloadNeeded,
 }: {
-    fase: Fase; eventoId: string
+    fase: Fase; todasLasFases: Fase[]; eventoId: string
     expandedTareaId: string | null
     setExpandedTareaId: (id: string | null) => void
     isAddingTarea: boolean; onToggleAddTarea: () => void
@@ -243,6 +244,8 @@ function FaseCard({
                                                 <TareaRow
                                                     tarea={tarea}
                                                     eventoId={eventoId}
+                                                    currentFaseId={fase.id}
+                                                    todasLasFases={todasLasFases}
                                                     isExpanded={expandedTareaId === tarea.id}
                                                     onToggle={() => setExpandedTareaId(expandedTareaId === tarea.id ? null : tarea.id)}
                                                     dragHandleProps={tdrag.dragHandleProps}
@@ -272,8 +275,10 @@ function FaseCard({
 
 // ─── TareaRow ─────────────────────────────────────────────────────────────────
 
-function TareaRow({ tarea, eventoId, isExpanded, onToggle, dragHandleProps }: {
-    tarea: Tarea; eventoId: string; isExpanded: boolean; onToggle: () => void;
+function TareaRow({ tarea, eventoId, currentFaseId, todasLasFases, isExpanded, onToggle, dragHandleProps }: {
+    tarea: Tarea; eventoId: string
+    currentFaseId: string; todasLasFases: Fase[]
+    isExpanded: boolean; onToggle: () => void
     dragHandleProps?: DraggableProvidedDragHandleProps | null
 }) {
     const vencida = isVencida(tarea)
@@ -313,7 +318,13 @@ function TareaRow({ tarea, eventoId, isExpanded, onToggle, dragHandleProps }: {
 
             {/* Expanded detail — full width below */}
             {isExpanded && (
-                <TareaDetail tarea={tarea} eventoId={eventoId} onClose={onToggle} />
+                <TareaDetail
+                    tarea={tarea}
+                    eventoId={eventoId}
+                    currentFaseId={currentFaseId}
+                    todasLasFases={todasLasFases}
+                    onClose={onToggle}
+                />
             )}
         </div>
     )
@@ -321,8 +332,10 @@ function TareaRow({ tarea, eventoId, isExpanded, onToggle, dragHandleProps }: {
 
 // ─── TareaDetail ─────────────────────────────────────────────────────────────
 
-function TareaDetail({ tarea, eventoId, onClose }: {
-    tarea: Tarea; eventoId: string; onClose: () => void
+function TareaDetail({ tarea, eventoId, currentFaseId, todasLasFases, onClose }: {
+    tarea: Tarea; eventoId: string
+    currentFaseId: string; todasLasFases: Fase[]
+    onClose: () => void
 }) {
     const [isPending, startTransition] = useTransition()
     const [nombre, setNombre] = useState(tarea.nombre)
@@ -330,6 +343,7 @@ function TareaDetail({ tarea, eventoId, onClose }: {
     const [tipo, setTipo] = useState(tarea.tipo)
     const [fecha, setFecha] = useState(tarea.fecha ?? '')
     const [resumen, setResumen] = useState(tarea.resumen ?? '')
+    const [faseId, setFaseId] = useState(currentFaseId)
     const [newAcuerdo, setNewAcuerdo] = useState('')
     const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -341,6 +355,7 @@ function TareaDetail({ tarea, eventoId, onClose }: {
                 tipo: tipo as 'reunion' | 'entregable' | 'decision' | 'pago',
                 fecha: fecha || null,
                 resumen: resumen || null,
+                ...(faseId !== currentFaseId ? { fase_id: faseId } : {}),
             })
             onClose()
         })
@@ -393,6 +408,25 @@ function TareaDetail({ tarea, eventoId, onClose }: {
                         onChange={e => setFecha(e.target.value)}
                         className="form-input"
                     />
+                </div>
+                {/* Fase */}
+                <div className="form-group">
+                    <label className="form-label">Fase</label>
+                    <select
+                        value={faseId}
+                        onChange={e => setFaseId(e.target.value)}
+                        className="form-input"
+                        style={{ fontWeight: faseId !== currentFaseId ? 600 : undefined, color: faseId !== currentFaseId ? 'var(--color-gold-dark)' : undefined }}
+                    >
+                        {todasLasFases.map(f => (
+                            <option key={f.id} value={f.id}>{f.nombre}</option>
+                        ))}
+                    </select>
+                    {faseId !== currentFaseId && (
+                        <p style={{ fontSize: '0.72rem', color: 'var(--color-gold-dark)', marginTop: '0.2rem' }}>
+                            ↳ Se moverá a &quot;{todasLasFases.find(f => f.id === faseId)?.nombre}&quot; al guardar
+                        </p>
+                    )}
                 </div>
                 {/* Resumen */}
                 <div className="form-group" style={{ gridColumn: '1 / -1' }}>
