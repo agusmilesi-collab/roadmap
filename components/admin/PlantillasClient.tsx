@@ -158,7 +158,10 @@ export function PlantillasClient({
         const t = searchParams.get('tipo') ?? 'boda'
         return (TIPOS_BASE.includes(t) || t in fasesPorTipo) ? t : 'boda'
     }, [searchParams, fasesPorTipo])
-    const fases = useMemo(() => fasesPorTipo[tipoActivo] ?? [], [fasesPorTipo, tipoActivo])
+    const [fases, setFases] = useState<PlantillaFase[]>(() => fasesPorTipo[tipoActivo] ?? [])
+    useEffect(() => {
+        setFases(fasesPorTipo[tipoActivo] ?? [])
+    }, [fasesPorTipo, tipoActivo])
     const [globalError, setGlobalError] = useState<string | null>(null)
     const [, startReorder] = useTransition()
     const [showNewModal, setShowNewModal] = useState(false)
