@@ -229,8 +229,8 @@ export function PlantillasClient({
         const tipo = confirmDeleteCustom
         if (!tipo) return
         setConfirmDeleteCustom(null)
-        const res = await deleteCustomPlantilla(tipo) as { success?: boolean; error?: string }
-        if (res.error) {
+        const res = await deleteCustomPlantilla(tipo)
+        if (res?.error) {
             setGlobalError(res.error)
         } else {
             setLocalCustomTipos((prev) => prev.filter((t) => t.value !== tipo))

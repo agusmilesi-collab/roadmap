@@ -185,21 +185,25 @@ export async function updatePlantillaNombreDisplay(tipo_evento: string, nombre_d
 
 // ─── Delete custom plantilla (all its fases + tareas) ────────────────────────
 
-export async function deleteCustomPlantilla(tipo_evento: string) {
+export async function deleteCustomPlantilla(tipo_evento: string): Promise<{ error: string } | void> {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any
 
     // Fetch all fase IDs for this tipo
-    const { data: fases } = await db
+    const { data: fases, error: fetchError } = await db
         .from('plantillas_fases')
         .select('id')
         .eq('tipo_evento', tipo_evento)
 
+    if (fetchError) return { error: fetchError.message }
+
     if (fases && fases.length > 0) {
         const ids = fases.map((f: { id: string }) => f.id)
-        await db.from('plantillas_tareas').delete().in('plantilla_fase_id', ids)
-        await db.from('plantillas_fases').delete().in('id', ids)
+        const { error: delTareasError } = await db.from('plantillas_tareas').delete().in('plantilla_fase_id', ids)
+        if (delTareasError) return { error: delTareasError.message }
+        const { error: delFasesError } = await db.from('plantillas_fases').delete().in('id', ids)
+        if (delFasesError) return { error: delFasesError.message }
     }
 
     revalidatePath('/plantillas')
