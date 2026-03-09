@@ -58,6 +58,20 @@ export default async function PlannerDashboardPage() {
         )
     }
 
+    // Fetch custom template display names to resolve labels for custom_* tipos
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: customPlantillasRaw } = await (supabase as any)
+        .from('plantillas_fases')
+        .select('tipo_evento, nombre_display')
+        .eq('es_custom', true)
+
+    const customLabelByTipo = new Map<string, string>()
+    for (const row of customPlantillasRaw ?? []) {
+        if (!customLabelByTipo.has(row.tipo_evento) && row.nombre_display) {
+            customLabelByTipo.set(row.tipo_evento as string, row.nombre_display as string)
+        }
+    }
+
     // Fetch only events assigned to this planner
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: eventos } = await (supabase as any)
@@ -115,6 +129,10 @@ export default async function PlannerDashboardPage() {
                 completadas: (f.tareas ?? []).filter((t: { id: string; completada: boolean }) => t.completada).length,
             }))
 
+        const tipoEventoDisplay = e.tipo_evento.startsWith('custom_')
+            ? customLabelByTipo.get(e.tipo_evento) ?? null
+            : null
+
         return {
             id: e.id,
             nombre: e.nombre,
@@ -127,6 +145,7 @@ export default async function PlannerDashboardPage() {
             tareasCompletadas,
             plannerNombre,
             fases: fasesStats,
+            tipoEventoDisplay,
         }
     })
 

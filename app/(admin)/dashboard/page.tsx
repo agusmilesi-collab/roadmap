@@ -44,6 +44,21 @@ export default async function DashboardPage() {
 
     const eventos = (eventosRaw ?? []) as EventoRow[]
 
+    // Fetch custom template display names to resolve labels for custom_* tipos
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: customPlantillasRaw } = await (supabase as any)
+        .from('plantillas_fases')
+        .select('tipo_evento, es_custom, nombre_display')
+        .eq('es_custom', true)
+
+    const customLabelByTipo = new Map<string, string>()
+    for (const row of customPlantillasRaw ?? []) {
+        const tipo = row.tipo_evento as string
+        if (!customLabelByTipo.has(tipo) && row.nombre_display) {
+            customLabelByTipo.set(tipo, row.nombre_display as string)
+        }
+    }
+
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -74,6 +89,9 @@ export default async function DashboardPage() {
                 completadas: (f.tareas ?? []).filter((t) => t.completada).length,
             }))
 
+        const tipoEventoDisplay =
+            e.tipo_evento.startsWith('custom_') ? customLabelByTipo.get(e.tipo_evento) ?? null : null
+
         return {
             id: e.id,
             nombre: e.nombre,
@@ -86,6 +104,7 @@ export default async function DashboardPage() {
             tareasCompletadas,
             plannerNombre,
             fases: fasesStats,
+            tipoEventoDisplay,
         }
     })
 

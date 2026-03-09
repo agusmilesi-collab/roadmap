@@ -87,20 +87,19 @@ function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
                         const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
                         return new Date(t.fecha + 'T12:00:00') < hoy
                     })
-                    const bg = total === 0
-                        ? 'var(--color-cream-dark)'
-                        : hasVencida
-                            ? '#EF4444'
-                            : pct === 100
-                                ? 'var(--color-olive)'
-                                : pct > 0
-                                    ? 'var(--color-gold)'
-                                    : 'var(--color-cream-dark)'
+                    const bg = hasVencida
+                        ? '#EF4444'
+                        : pct === 100
+                            ? 'var(--color-olive)'
+                            : pct > 0
+                                ? 'var(--color-gold)'
+                                : 'var(--color-cream-dark)'
+                    const trackBg = total === 0 || pct === 0 ? '#D1D5DB' : 'var(--color-cream-dark)'
                     return (
                         <div
                             key={fase.id}
                             title={`${fase.nombre}: ${pct}%${hasVencida ? ' ⚠ con tareas vencidas' : ''}`}
-                            style={{ flex: 1, backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden', position: 'relative' }}
+                            style={{ flex: 1, backgroundColor: trackBg, borderRadius: '99px', overflow: 'hidden', position: 'relative' }}
                         >
                             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, backgroundColor: bg, borderRadius: '99px', transition: 'width 0.3s ease, background-color 0.3s ease' }} />
                         </div>
@@ -110,7 +109,20 @@ function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
             {/* Labels row */}
             <div style={{ display: 'flex', gap: '3px' }}>
                 {fases.map((fase) => (
-                    <div key={fase.id} style={{ flex: 1, minWidth: 0, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.65rem', color: 'var(--color-text-muted)', lineHeight: 1 }}>
+                    <div
+                        key={fase.id}
+                        style={{
+                            flex: 1,
+                            minWidth: 0,
+                            textAlign: 'center',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontSize: '0.65rem',
+                            color: '#4B5563',
+                            lineHeight: 1,
+                        }}
+                    >
                         {fase.nombre}
                     </div>
                 ))}

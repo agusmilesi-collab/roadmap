@@ -1,17 +1,18 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { createServerSupabaseClient } from '@/lib/supabase'
 
 // ─── Update fase name/description ────────────────────────────────────────────
 
-export async function updatePlantillaFase(id: string, data: { nombre?: string; descripcion?: string }) {
+export async function updatePlantillaFase(id: string, data: { nombre?: string; descripcion?: string }, tipoEvento: string) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any).from('plantillas_fases').update(data).eq('id', id)
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
-    return { success: true }
+    redirect(`/plantillas?tipo=${encodeURIComponent(tipoEvento)}`)
 }
 
 // ─── Add new fase to template ────────────────────────────────────────────────
@@ -36,12 +37,12 @@ export async function createPlantillaFase(tipo_evento: string, nombre: string, d
 
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
-    return { success: true }
+    redirect(`/plantillas?tipo=${encodeURIComponent(tipo_evento)}`)
 }
 
 // ─── Delete fase from template ────────────────────────────────────────────────
 
-export async function deletePlantillaFase(id: string) {
+export async function deletePlantillaFase(id: string, tipoEvento: string) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any
@@ -49,18 +50,18 @@ export async function deletePlantillaFase(id: string) {
     const { error } = await db.from('plantillas_fases').delete().eq('id', id)
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
-    return { success: true }
+    redirect(`/plantillas?tipo=${encodeURIComponent(tipoEvento)}`)
 }
 
 // ─── Update tarea in template ─────────────────────────────────────────────────
 
-export async function updatePlantillaTarea(id: string, data: { nombre?: string; tipo?: string; meses_antes?: number | null }) {
+export async function updatePlantillaTarea(id: string, data: { nombre?: string; tipo?: string; meses_antes?: number | null }, tipoEvento: string) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any).from('plantillas_tareas').update(data).eq('id', id)
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
-    return { success: true }
+    redirect(`/plantillas?tipo=${encodeURIComponent(tipoEvento)}`)
 }
 
 // ─── Add tarea to fase ────────────────────────────────────────────────────────
@@ -69,7 +70,8 @@ export async function createPlantillaTarea(
     plantilla_fase_id: string,
     nombre: string,
     tipo: string,
-    meses_antes: number | null
+    meses_antes: number | null,
+    tipoEvento: string
 ) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -90,18 +92,18 @@ export async function createPlantillaTarea(
 
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
-    return { success: true }
+    redirect(`/plantillas?tipo=${encodeURIComponent(tipoEvento)}`)
 }
 
 // ─── Delete tarea from template ───────────────────────────────────────────────
 
-export async function deletePlantillaTarea(id: string) {
+export async function deletePlantillaTarea(id: string, tipoEvento: string) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any).from('plantillas_tareas').delete().eq('id', id)
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
-    return { success: true }
+    redirect(`/plantillas?tipo=${encodeURIComponent(tipoEvento)}`)
 }
 
 // ─── Reorder fases ────────────────────────────────────────────────────────────
@@ -161,7 +163,24 @@ export async function createCustomPlantilla(nombre: string) {
 
     if (error) return { error: error.message }
     revalidatePath('/plantillas')
-    return { success: true, tipo_evento, nombre_display: nombre }
+    redirect(`/plantillas?tipo=${encodeURIComponent(tipo_evento)}`)
+}
+
+// ─── Update display name for a plantilla type (base or custom) ────────────────
+
+export async function updatePlantillaNombreDisplay(tipo_evento: string, nombre_display: string) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+
+    const { error } = await db
+        .from('plantillas_fases')
+        .update({ nombre_display })
+        .eq('tipo_evento', tipo_evento)
+
+    if (error) return { error: error.message }
+    revalidatePath('/plantillas')
+    redirect(`/plantillas?tipo=${encodeURIComponent(tipo_evento)}`)
 }
 
 // ─── Delete custom plantilla (all its fases + tareas) ────────────────────────
@@ -184,5 +203,5 @@ export async function deleteCustomPlantilla(tipo_evento: string) {
     }
 
     revalidatePath('/plantillas')
-    return { success: true }
+    redirect('/plantillas?tipo=boda')
 }

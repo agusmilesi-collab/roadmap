@@ -191,6 +191,139 @@ a:hover {
   padding: 0.65rem 1rem;
 }
 
+/* ─── Plantillas tabs (pills) ────────────────────────────────────────────────── */
+.plantillas-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.plantillas-custom-dropdown {
+  position: relative;
+}
+
+.plantilla-tab-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 38px;
+  padding: 0.5rem 1rem;
+  border-radius: 99px;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  flex-shrink: 0;
+  border: 1px solid #D1D5DB;
+  color: #4B5563;
+  background: transparent;
+}
+.plantilla-tab-pill:hover {
+  border-color: #9CA3AF;
+  color: #374151;
+}
+
+.plantilla-tab-pill--active {
+  background: #C9A84C;
+  border-color: #C9A84C;
+  color: white;
+}
+.plantilla-tab-pill--active:hover {
+  background: #B8983D;
+  border-color: #B8983D;
+  color: white;
+}
+
+.plantilla-tab-pill--new {
+  border: 1px dashed var(--color-gold);
+  color: var(--color-gold);
+  background: transparent;
+}
+.plantilla-tab-pill--new:hover {
+  background: rgba(201, 168, 76, 0.08);
+  color: var(--color-gold-dark);
+}
+
+.plantillas-dropdown-trigger.plantilla-tab-pill--dropdown-open {
+  border-color: var(--color-gold);
+  background: rgba(201, 168, 76, 0.06);
+}
+
+.plantillas-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.25rem;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 50;
+}
+
+.plantillas-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: #4B5563;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.plantillas-dropdown-item:hover {
+  background: var(--color-cream);
+}
+.plantillas-dropdown-item--active {
+  background: rgba(201, 168, 76, 0.12);
+  color: var(--color-gold-dark);
+}
+.plantillas-dropdown-item .tab-icon {
+  opacity: 0.6;
+}
+.plantillas-dropdown-item:hover .tab-icon {
+  opacity: 1;
+}
+
+.plantilla-tab-pill .tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem;
+  margin: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.7rem;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+  border-radius: 4px;
+  font-family: inherit;
+}
+.plantilla-tab-pill:hover .tab-icon {
+  opacity: 0.85;
+}
+.plantilla-tab-pill--active .tab-icon {
+  filter: brightness(0) invert(1);
+}
+.plantilla-tab-pill--active:hover .tab-icon {
+  opacity: 0.9;
+}
+.plantilla-tab-pill .tab-icon:hover {
+  opacity: 1;
+}
+.plantilla-tab-pill .tab-icon--trash:hover {
+  color: var(--color-error);
+  filter: none;
+}
+
 /* ─── Animations ─────────────────────────────────────────────────────────────── */
 @keyframes spin {
   to {

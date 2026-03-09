@@ -1,10 +1,11 @@
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { PlantillasClient } from '@/components/admin/PlantillasClient'
 
 export const metadata = { title: 'Plantillas — TMP Eventos' }
 
-const TIPOS_BASE = ['boda', 'quince', 'cumple', 'baby_shower']
+const TIPOS_BASE = ['boda', 'quince', 'cumple', 'baby_shower'] // for buildFasesForTipo
 
 export default async function PlantillasPage() {
     const supabase = await createServerSupabaseClient()
@@ -65,6 +66,14 @@ export default async function PlantillasPage() {
         }
     }
 
+    // Optional display names for base tipos (from nombre_display when present)
+    const baseTipoDisplayNames: Record<string, string> = {}
+    for (const f of allFases) {
+        if (!f.es_custom && f.nombre_display && TIPOS_BASE.includes(f.tipo_evento)) {
+            baseTipoDisplayNames[f.tipo_evento] = f.nombre_display
+        }
+    }
+
     return (
         <main style={st.main}>
             <div style={st.container}>
@@ -88,7 +97,13 @@ export default async function PlantillasPage() {
                     Editá las fases y tareas base por tipo de evento. Estos cambios se aplican solo a eventos futuros.
                 </p>
 
-                <PlantillasClient fasesPorTipo={fasesPorTipo} customTipos={customTipos} />
+                <Suspense fallback={<div style={{ padding: '2rem', color: 'var(--color-text-muted)' }}>Cargando…</div>}>
+                    <PlantillasClient
+                        fasesPorTipo={fasesPorTipo}
+                        customTipos={customTipos}
+                        baseTipoDisplayNames={baseTipoDisplayNames}
+                    />
+                </Suspense>
             </div>
         </main>
     )

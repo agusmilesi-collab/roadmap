@@ -16,6 +16,8 @@ export interface EventoConStats {
     tareasCompletadas: number
     plannerNombre: string | null
     fases: { nombre: string; total: number; completadas: number }[]
+    /** Nombre legible del tipo de evento (para tipos custom) */
+    tipoEventoDisplay?: string | null
 }
 
 const TIPO_LABELS: Record<string, string> = {
@@ -36,7 +38,7 @@ export function EventCard({ evento, href, canDelete = true }: EventCardProps) {
     const [isPending, startTransition] = useTransition()
 
     const tipoColor = TIPO_COLORS[evento.tipo_evento] ?? 'var(--color-gold)'
-    const tipoLabel = TIPO_LABELS[evento.tipo_evento] ?? evento.tipo_evento
+    const tipoLabel = evento.tipoEventoDisplay ?? TIPO_LABELS[evento.tipo_evento] ?? evento.tipo_evento
 
     const diasLabel =
         evento.diasRestantes < 0

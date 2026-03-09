@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef, useEffect, useMemo } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import {
@@ -14,6 +15,7 @@ import {
     reorderPlantillaTareas,
     createCustomPlantilla,
     deleteCustomPlantilla,
+    updatePlantillaNombreDisplay,
 } from '@/app/(admin)/plantillas/actions'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,12 +36,100 @@ interface PlantillaFase {
     tareas: PlantillaTarea[]
 }
 
-const TIPOS_EVENTO = [
-    { value: 'boda', label: '💍 Boda' },
-    { value: 'quince', label: '🌸 Quinceañera' },
-    { value: 'cumple', label: '🎂 Cumpleaños' },
-    { value: 'baby_shower', label: '🍼 Baby Shower' },
+const BASE_TIPOS_EVENTO = [
+    { value: 'boda', defaultLabel: '💍 Boda' },
+    { value: 'quince', defaultLabel: '🌸 Quinceañera' },
+    { value: 'cumple', defaultLabel: '🎂 Cumpleaños' },
+    { value: 'baby_shower', defaultLabel: '🍼 Baby Shower' },
 ]
+
+// ─── Custom plantillas dropdown ────────────────────────────────────────────────
+
+function CustomDropdown({
+    customTipos,
+    tipoActivo,
+    isCustomSelected,
+    open,
+    onToggle,
+    onClose,
+    onSelect,
+    onEdit,
+    onDelete,
+}: {
+    customTipos: { value: string; label: string }[]
+    tipoActivo: string
+    isCustomSelected: boolean
+    open: boolean
+    onToggle: () => void
+    onClose: () => void
+    onSelect: (tipo: string) => void
+    onEdit: (t: { value: string; label: string }) => void
+    onDelete: (t: { value: string; label: string }) => void
+}) {
+    const ref = useRef<HTMLDivElement>(null)
+    const selected = customTipos.find((c) => c.value === tipoActivo)
+
+    useEffect(() => {
+        function handleClickOutside(e: MouseEvent) {
+            if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+        }
+        if (open) document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [open, onClose])
+
+    return (
+        <div ref={ref} className="plantillas-custom-dropdown">
+            <button
+                type="button"
+                role="tab"
+                aria-selected={isCustomSelected}
+                aria-expanded={open}
+                aria-haspopup="listbox"
+                className={`plantilla-tab-pill plantillas-dropdown-trigger ${isCustomSelected ? 'plantilla-tab-pill--active' : ''} ${open ? 'plantilla-tab-pill--dropdown-open' : ''}`}
+                onClick={onToggle}
+            >
+                <span>{selected ? selected.label : 'Mis plantillas'}</span>
+                <span style={{ fontSize: '0.65rem', opacity: 0.9 }}>▾</span>
+            </button>
+            {open && (
+                <div className="plantillas-dropdown-menu" role="listbox">
+                    {customTipos.map((t) => {
+                        const isActive = tipoActivo === t.value
+                        return (
+                            <div
+                                key={t.value}
+                                role="option"
+                                aria-selected={isActive}
+                                className={`plantillas-dropdown-item ${isActive ? 'plantillas-dropdown-item--active' : ''}`}
+                                onClick={() => onSelect(t.value)}
+                            >
+                                <span style={{ flex: 1 }}>{t.label}</span>
+                                <button
+                                    type="button"
+                                    className="tab-icon"
+                                    onClick={(e) => { e.stopPropagation(); onEdit(t) }}
+                                    title="Renombrar"
+                                    aria-label="Renombrar"
+                                >
+                                    ✏️
+                                </button>
+                                <button
+                                    type="button"
+                                    className="tab-icon tab-icon--trash"
+                                    onClick={(e) => { e.stopPropagation(); onDelete(t) }}
+                                    title="Eliminar plantilla"
+                                    aria-label="Eliminar plantilla"
+                                >
+                                    🗑
+                                </button>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
+        </div>
+    )
+}
 
 const TIPOS_TAREA = ['reunion', 'entregable', 'decision']
 const TIPO_LABELS: Record<string, string> = {
@@ -50,15 +140,25 @@ const TIPO_LABELS: Record<string, string> = {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+const TIPOS_BASE = ['boda', 'quince', 'cumple', 'baby_shower']
+
 export function PlantillasClient({
     fasesPorTipo,
     customTipos = [],
+    baseTipoDisplayNames,
 }: {
     fasesPorTipo: Record<string, PlantillaFase[]>
     customTipos?: { value: string; label: string }[]
+    initialTipo?: string
+    baseTipoDisplayNames?: Record<string, string>
 }) {
-    const [tipoSeleccionado, setTipoSeleccionado] = useState('boda')
-    const [fases, setFases] = useState<PlantillaFase[]>(fasesPorTipo['boda'] ?? [])
+    const searchParams = useSearchParams()
+    const router = useRouter()
+    const tipoActivo = useMemo(() => {
+        const t = searchParams.get('tipo') ?? 'boda'
+        return (TIPOS_BASE.includes(t) || t in fasesPorTipo) ? t : 'boda'
+    }, [searchParams, fasesPorTipo])
+    const fases = useMemo(() => fasesPorTipo[tipoActivo] ?? [], [fasesPorTipo, tipoActivo])
     const [globalError, setGlobalError] = useState<string | null>(null)
     const [, startReorder] = useTransition()
     const [showNewModal, setShowNewModal] = useState(false)
@@ -66,15 +166,44 @@ export function PlantillasClient({
     const [creating, setCreating] = useState(false)
     const [localCustomTipos, setLocalCustomTipos] = useState(customTipos)
     const [confirmDeleteCustom, setConfirmDeleteCustom] = useState<string | null>(null)
+    const [editingTipo, setEditingTipo] = useState<string | null>(null)
+    const [editNombreTipo, setEditNombreTipo] = useState('')
+    const [savingNombreTipo, setSavingNombreTipo] = useState(false)
+    const [customDropdownOpen, setCustomDropdownOpen] = useState(false)
 
     function changeTipo(tipo: string) {
-        setTipoSeleccionado(tipo)
-        setFases(fasesPorTipo[tipo] ?? [])
         setGlobalError(null)
+        router.push(`/plantillas?tipo=${encodeURIComponent(tipo)}`)
     }
 
-    function reloadNeeded() {
-        window.location.reload()
+    function getBaseTipoLabel(value: string) {
+        const override = baseTipoDisplayNames?.[value]
+        if (override) return override
+        const base = BASE_TIPOS_EVENTO.find((t) => t.value === value)
+        return base?.defaultLabel ?? value
+    }
+
+    function startEditingTipo(tipo: string, label: string) {
+        setEditingTipo(tipo)
+        setEditNombreTipo(label)
+    }
+
+    async function saveNombreTipo() {
+        const tipo = editingTipo
+        const nombre = editNombreTipo.trim()
+        if (!tipo || !nombre) {
+            setEditingTipo(null)
+            return
+        }
+        setSavingNombreTipo(true)
+        const res = await updatePlantillaNombreDisplay(tipo, nombre)
+        setSavingNombreTipo(false)
+        if (res?.error) {
+            setGlobalError(res.error)
+            return
+        }
+        // Action redirects on success; if no redirect (edge case), close editor
+        setEditingTipo(null)
     }
 
     async function handleCreateCustom() {
@@ -88,8 +217,7 @@ export function PlantillasClient({
         } else {
             setShowNewModal(false)
             setNewNombre('')
-            // Reload to pick up the new tipo from the server
-            window.location.reload()
+            // Action redirects on success to new plantilla
         }
     }
 
@@ -106,7 +234,7 @@ export function PlantillasClient({
             setGlobalError(res.error)
         } else {
             setLocalCustomTipos((prev) => prev.filter((t) => t.value !== tipo))
-            if (tipoSeleccionado === tipo) changeTipo('boda')
+            // Action redirects to /plantillas?tipo=boda on success
         }
     }
 
@@ -180,61 +308,89 @@ export function PlantillasClient({
         <div style={st.wrapper}>
             {globalError && <div className="alert-error">{globalError}</div>}
 
-            {/* Type selector */}
-            <div style={st.typeSelector}>
-                {TIPOS_EVENTO.map((t) => (
-                    <button
-                        key={t.value}
-                        onClick={() => changeTipo(t.value)}
-                        style={{
-                            ...st.typeBtn,
-                            ...(tipoSeleccionado === t.value ? st.typeBtnActive : {}),
-                        }}
-                    >
-                        {t.label}
-                    </button>
-                ))}
-
-                {/* Custom template tabs */}
-                {localCustomTipos.map((t) => (
-                    <div key={t.value} style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
-                        <button
-                            onClick={() => changeTipo(t.value)}
-                            style={{
-                                ...st.typeBtn,
-                                ...(tipoSeleccionado === t.value ? st.typeBtnActive : {}),
-                                borderTopRightRadius: 0,
-                                borderBottomRightRadius: 0,
-                                borderRight: 'none',
-                            }}
+            {/* Type selector — base pills + custom dropdown + Nueva */}
+            <div className="plantillas-tabs-row" role="tablist">
+                {/* Base plantillas — always visible pills */}
+                {BASE_TIPOS_EVENTO.map((t) => {
+                    const label = getBaseTipoLabel(t.value)
+                    const isActive = tipoActivo === t.value
+                    return (
+                        <div
+                            key={t.value}
+                            role="tab"
+                            aria-selected={isActive}
+                            className={`plantilla-tab-pill ${isActive ? 'plantilla-tab-pill--active' : ''}`}
+                            onClick={() => { changeTipo(t.value); setCustomDropdownOpen(false) }}
                         >
-                            {t.label}
-                        </button>
-                        <button
-                            onClick={() => handleDeleteCustom(t.value)}
-                            title="Eliminar plantilla"
-                            style={{
-                                ...st.typeBtn,
-                                borderTopLeftRadius: 0,
-                                borderBottomLeftRadius: 0,
-                                color: 'var(--color-error)',
-                                padding: '0.4rem 0.5rem',
-                                ...(tipoSeleccionado === t.value ? st.typeBtnActive : {}),
-                            }}
-                        >
-                            ✕
-                        </button>
-                    </div>
-                ))}
+                            <span>{label}</span>
+                            <button
+                                type="button"
+                                className="tab-icon"
+                                onClick={(e) => { e.stopPropagation(); startEditingTipo(t.value, label) }}
+                                title="Renombrar plantilla"
+                                aria-label="Renombrar plantilla"
+                            >
+                                ✏️
+                            </button>
+                        </div>
+                    )
+                })}
 
-                {/* New template button */}
-                <button
-                    onClick={() => setShowNewModal(true)}
-                    style={{ ...st.typeBtn, borderStyle: 'dashed', color: 'var(--color-gold)' }}
+                {/* Custom plantillas — dropdown "Mis plantillas ▾" */}
+                {localCustomTipos.length > 0 && (
+                    <CustomDropdown
+                        customTipos={localCustomTipos}
+                        tipoActivo={tipoActivo}
+                        isCustomSelected={localCustomTipos.some((c) => c.value === tipoActivo)}
+                        open={customDropdownOpen}
+                        onToggle={() => setCustomDropdownOpen((v) => !v)}
+                        onClose={() => setCustomDropdownOpen(false)}
+                        onSelect={(tipo) => { changeTipo(tipo); setCustomDropdownOpen(false) }}
+                        onEdit={(t) => { setCustomDropdownOpen(false); startEditingTipo(t.value, t.label) }}
+                        onDelete={(t) => { setCustomDropdownOpen(false); handleDeleteCustom(t.value) }}
+                    />
+                )}
+
+                {/* Nueva — always visible */}
+                <div
+                    role="tab"
+                    className="plantilla-tab-pill plantilla-tab-pill--new"
+                    onClick={() => { setShowNewModal(true); setCustomDropdownOpen(false) }}
                 >
                     + Nueva
-                </button>
+                </div>
             </div>
+
+            {/* Inline editor for plantilla name */}
+            {editingTipo && (
+                <div style={st.renameRow}>
+                    <input
+                        className="form-input"
+                        value={editNombreTipo}
+                        onChange={(e) => setEditNombreTipo(e.target.value)}
+                        placeholder="Nombre de la plantilla"
+                        style={{ maxWidth: '260px' }}
+                    />
+                    <button
+                        className="btn-ghost"
+                        style={st.smallBtn}
+                        type="button"
+                        onClick={() => { setEditingTipo(null); setEditNombreTipo('') }}
+                        disabled={savingNombreTipo}
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        className="btn-gold"
+                        style={st.smallBtn}
+                        type="button"
+                        onClick={saveNombreTipo}
+                        disabled={savingNombreTipo || !editNombreTipo.trim()}
+                    >
+                        {savingNombreTipo ? 'Guardando…' : 'Guardar nombre'}
+                    </button>
+                </div>
+            )}
 
             {/* New template modal */}
             {showNewModal && (
@@ -304,9 +460,9 @@ export function PlantillasClient({
                                         >
                                             <FaseEditor
                                                 fase={fase}
+                                                tipoEvento={tipoActivo}
                                                 dragHandleProps={drag.dragHandleProps}
                                                 onError={setGlobalError}
-                                                onMutated={reloadNeeded}
                                                 onTareaUpdate={(tareaId, patch) => updateTareaInState(fase.id, tareaId, patch)}
                                                 onTareaRemove={(tareaId) => removeTareaFromState(fase.id, tareaId)}
                                             />
@@ -322,9 +478,8 @@ export function PlantillasClient({
 
             {/* Add fase */}
             <AddFaseForm
-                tipoEvento={tipoSeleccionado}
+                tipoEvento={tipoActivo}
                 onError={setGlobalError}
-                onMutated={reloadNeeded}
             />
 
             {/* Confirm delete custom plantilla modal */}
@@ -345,16 +500,16 @@ export function PlantillasClient({
 
 function FaseEditor({
     fase,
+    tipoEvento,
     dragHandleProps,
     onError,
-    onMutated,
     onTareaUpdate,
     onTareaRemove,
 }: {
     fase: PlantillaFase
+    tipoEvento: string
     dragHandleProps: React.HTMLAttributes<HTMLElement> | null | undefined
     onError: (e: string) => void
-    onMutated: () => void
     onTareaUpdate: (tareaId: string, patch: Partial<PlantillaTarea>) => void
     onTareaRemove: (tareaId: string) => void
 }) {
@@ -366,9 +521,10 @@ function FaseEditor({
 
     function saveFase() {
         startTransition(async () => {
-            const res = await updatePlantillaFase(fase.id, { nombre, descripcion: descripcion || undefined })
+            const res = await updatePlantillaFase(fase.id, { nombre, descripcion: descripcion || undefined }, tipoEvento)
             if (res?.error) onError(res.error)
-            else { setEditingFase(false); onMutated() }
+            else setEditingFase(false)
+            // On success, action redirects
         })
     }
 
@@ -379,9 +535,9 @@ function FaseEditor({
     function executeDelete() {
         setShowDeleteModal(false)
         startTransition(async () => {
-            const res = await deletePlantillaFase(fase.id)
+            const res = await deletePlantillaFase(fase.id, tipoEvento)
             if (res?.error) onError(res.error)
-            else onMutated()
+            // On success, action redirects
         })
     }
 
@@ -469,6 +625,7 @@ function FaseEditor({
                                         >
                                             <TareaEditor
                                                 tarea={t}
+                                                tipoEvento={tipoEvento}
                                                 dragHandleProps={drag.dragHandleProps}
                                                 onError={onError}
                                                 onUpdated={(patch) => onTareaUpdate(t.id, patch)}
@@ -482,7 +639,7 @@ function FaseEditor({
                         </div>
                     )}
                 </Droppable>
-                <AddTareaForm faseId={fase.id} onError={onError} onMutated={onMutated} />
+                <AddTareaForm faseId={fase.id} tipoEvento={tipoEvento} onError={onError} />
             </div>
 
             {/* Confirm delete fase modal */}
@@ -503,12 +660,14 @@ function FaseEditor({
 
 function TareaEditor({
     tarea: t,
+    tipoEvento,
     dragHandleProps,
     onError,
     onUpdated,
     onRemoved,
 }: {
     tarea: PlantillaTarea
+    tipoEvento: string
     dragHandleProps: React.HTMLAttributes<HTMLElement> | null | undefined
     onError: (e: string) => void
     onUpdated: (patch: Partial<PlantillaTarea>) => void
@@ -523,17 +682,19 @@ function TareaEditor({
     function save() {
         startTransition(async () => {
             const mesesVal = meses !== '' ? parseInt(meses) : null
-            const res = await updatePlantillaTarea(t.id, { nombre, tipo, meses_antes: mesesVal })
+            const res = await updatePlantillaTarea(t.id, { nombre, tipo, meses_antes: mesesVal }, tipoEvento)
             if (res?.error) onError(res.error)
             else { setEditing(false); onUpdated({ nombre, tipo, meses_antes: mesesVal }) }
+            // On success, action redirects (inline update is optimistic for UX)
         })
     }
 
     function handleDelete() {
         startTransition(async () => {
-            const res = await deletePlantillaTarea(t.id)
+            const res = await deletePlantillaTarea(t.id, tipoEvento)
             if (res?.error) onError(res.error)
             else onRemoved()
+            // On success, action redirects
         })
     }
 
@@ -600,7 +761,7 @@ function TareaEditor({
 
 // ─── AddTareaForm ─────────────────────────────────────────────────────────────
 
-function AddTareaForm({ faseId, onError, onMutated }: { faseId: string; onError: (e: string) => void; onMutated: () => void }) {
+function AddTareaForm({ faseId, tipoEvento, onError }: { faseId: string; tipoEvento: string; onError: (e: string) => void }) {
     const [show, setShow] = useState(false)
     const [nombre, setNombre] = useState('')
     const [tipo, setTipo] = useState('decision')
@@ -610,9 +771,10 @@ function AddTareaForm({ faseId, onError, onMutated }: { faseId: string; onError:
     function submit() {
         if (!nombre.trim()) return
         startTransition(async () => {
-            const res = await createPlantillaTarea(faseId, nombre.trim(), tipo, meses !== '' ? parseInt(meses) : null)
+            const res = await createPlantillaTarea(faseId, nombre.trim(), tipo, meses !== '' ? parseInt(meses) : null, tipoEvento)
             if (res?.error) onError(res.error)
-            else { setNombre(''); setMeses(''); setShow(false); onMutated() }
+            else { setNombre(''); setMeses(''); setShow(false) }
+            // On success, action redirects
         })
     }
 
@@ -641,7 +803,7 @@ function AddTareaForm({ faseId, onError, onMutated }: { faseId: string; onError:
 
 // ─── AddFaseForm ──────────────────────────────────────────────────────────────
 
-function AddFaseForm({ tipoEvento, onError, onMutated }: { tipoEvento: string; onError: (e: string) => void; onMutated: () => void }) {
+function AddFaseForm({ tipoEvento, onError }: { tipoEvento: string; onError: (e: string) => void }) {
     const [show, setShow] = useState(false)
     const [nombre, setNombre] = useState('')
     const [descripcion, setDescripcion] = useState('')
@@ -652,7 +814,8 @@ function AddFaseForm({ tipoEvento, onError, onMutated }: { tipoEvento: string; o
         startTransition(async () => {
             const res = await createPlantillaFase(tipoEvento, nombre.trim(), descripcion.trim())
             if (res?.error) onError(res.error)
-            else { setNombre(''); setDescripcion(''); setShow(false); onMutated() }
+            else { setNombre(''); setDescripcion(''); setShow(false) }
+            // On success, action redirects
         })
     }
 
@@ -686,9 +849,6 @@ type Styles = Record<string, React.CSSProperties>
 
 const st: Styles = {
     wrapper: { display: 'flex', flexDirection: 'column', gap: '1rem' },
-    typeSelector: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' },
-    typeBtn: { padding: '0.5rem 1.1rem', border: '1.5px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'white', fontFamily: 'var(--font-sans)', fontSize: '0.875rem', cursor: 'pointer', color: 'var(--color-text-muted)', transition: 'all 0.15s' },
-    typeBtnActive: { borderColor: 'var(--color-gold)', color: 'var(--color-gold-dark)', background: 'rgba(201,168,76,0.06)', fontWeight: 600 },
     infoBanner: { display: 'flex', alignItems: 'flex-start', gap: '0.5rem', padding: '0.7rem 1rem', backgroundColor: 'rgba(107,124,92,0.08)', border: '1px solid rgba(107,124,92,0.2)', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--color-olive)', lineHeight: 1.5 },
     fasesList: { display: 'flex', flexDirection: 'column', gap: '0.85rem' },
     faseCard: { padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' },
@@ -710,4 +870,5 @@ const st: Styles = {
     modalOverlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 },
     modal: { backgroundColor: 'white', borderRadius: 'var(--radius)', padding: '2rem', width: '100%', maxWidth: '400px', boxShadow: '0 8px 40px rgba(0,0,0,0.18)', display: 'flex', flexDirection: 'column', gap: '0.75rem' },
     modalTitle: { fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 600, color: 'var(--color-text)' },
+    renameRow: { marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' },
 }
