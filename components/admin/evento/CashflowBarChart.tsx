@@ -87,7 +87,7 @@ interface TooltipPayloadEntry {
     fill: string
 }
 
-function buildTooltip(rubros: Rubro[], showARS: boolean) {
+function buildTooltip(rubros: ChartRubro[], showARS: boolean) {
     return function CustomTooltip({ active, payload, label }: {
         active?: boolean
         payload?: TooltipPayloadEntry[]

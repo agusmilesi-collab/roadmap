@@ -310,6 +310,26 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
     const pagosRealizados = pagos.filter(p => p.realizado).length
     const pagosPendientes = pagos.length - pagosRealizados
 
+    // Auto-create seña pago on first expansion
+    const señaCheckedRef = useRef(false)
+    useEffect(() => {
+        if (!isExpanded || señaCheckedRef.current) return
+        señaCheckedRef.current = true
+        const senaPctNum = parseFloat(senaPct)
+        const costoNum_ = parseFloat(costoTotal) || 0
+        if (!senaPctNum || !costoNum_) return
+        const yaExiste = pagos.some(p => p.descripcion?.toLowerCase() === 'seña')
+        if (yaExiste) return
+        startTransition(async () => {
+            await createPago(rubro.id, eventoId, {
+                monto: parseFloat((costoNum_ * senaPctNum / 100).toFixed(2)),
+                moneda: moneda as 'USD' | 'ARS',
+                fecha: fechaDecision || new Date().toISOString().slice(0, 10),
+                descripcion: 'Seña',
+            })
+        })
+    }, [isExpanded]) // eslint-disable-line react-hooks/exhaustive-deps
+
     // Real-time pago montos for balance calculation
     const [pagosMontos, setPagosMontos] = useState<Map<string, { monto: number; moneda: string }>>(
         () => new Map(pagos.map(p => [p.id, { monto: p.monto, moneda: p.moneda }]))
@@ -486,7 +506,8 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
 
                         {/* Balance summary */}
                         {pagos.length > 0 && costoUSD > 0 && (
-                            <div style={{ marginTop: '0.6rem', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-cream)', border: '1px solid var(--color-border)', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                <div style={{ padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-cream)', border: '1px solid var(--color-border)', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                                 <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
                                     Total pagado: <strong style={{ color: 'var(--color-text)' }}>USD {fmt(realizadosUSD, 0)}</strong>
                                 </span>
@@ -498,13 +519,19 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
                                     {estaSaldado && <span style={{ fontSize: '0.72rem', color: '#2E7D32', marginLeft: '0.35rem' }}>✓ Saldado</span>}
                                 </span>
                                 {Math.abs(proyectadoUSD) > 0.5 && (
-                                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                        Proyectado:{' '}
-                                        <strong style={{ color: proyectadoUSD <= 0 ? '#2E7D32' : 'var(--color-text-muted)' }}>
-                                            USD {fmt(Math.max(0, proyectadoUSD), 0)}
+                                    <span style={{ fontSize: '0.78rem', fontStyle: 'italic' }}>
+                                        Saldo proyectado:{' '}
+                                        <strong style={{ color: proyectadoUSD < 0 ? '#C62828' : proyectadoUSD === 0 ? '#2E7D32' : 'var(--color-text-muted)' }}>
+                                            {proyectadoUSD < 0 ? `-USD ${fmt(Math.abs(proyectadoUSD), 0)}` : `USD ${fmt(proyectadoUSD, 0)}`}
                                         </strong>
                                         {proyectadoUSD <= 0 && ' ✓'}
                                     </span>
+                                )}
+                                </div>
+                                {proyectadoUSD < -0.5 && (
+                                    <div style={{ padding: '0.4rem 0.75rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(198,40,40,0.07)', border: '1px solid rgba(198,40,40,0.2)', fontSize: '0.78rem', color: '#C62828', fontWeight: 500 }}>
+                                        ⚠ Los pagos proyectados superan el costo total del rubro
+                                    </div>
                                 )}
                             </div>
                         )}
@@ -595,7 +622,7 @@ function PagoRow({ pago, eventoId, onMontoChange }: {
             onMouseLeave={() => { setIsHovered(false); setConfirmDelete(false) }}
         >
             <input type="number" min="0" step="100" value={monto} onChange={e => { setMonto(e.target.value); onMontoChange?.(pago.id, parseFloat(e.target.value) || 0, moneda) }} onBlur={() => saveField({ monto: parseFloat(monto) || 0 })} className="form-input" style={{ width: '110px', fontSize: '0.85rem' }} placeholder="0" title="Monto" />
-            <select value={moneda} onChange={e => { setMoneda(e.target.value); saveField({ moneda: e.target.value as 'USD' | 'ARS' }); onMontoChange?.(pago.id, parseFloat(monto) || 0, e.target.value) }} className="form-input" style={{ width: '72px', fontSize: '0.85rem' }} title="Moneda">
+            <select value={moneda} onChange={e => { setMoneda(e.target.value); saveField({ moneda: e.target.value as 'USD' | 'ARS' }); onMontoChange?.(pago.id, parseFloat(monto) || 0, e.target.value) }} className="form-input" style={{ width: '88px', minWidth: '88px', fontSize: '0.85rem' }} title="Moneda">
                 <option value="USD">USD</option>
                 <option value="ARS">ARS</option>
             </select>
