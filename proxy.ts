@@ -8,7 +8,7 @@ const ADMIN_PREFIXES = ['/dashboard', '/eventos', '/planners', '/plantillas']
 // Paths that require any authenticated user (planner role)
 const PLANNER_PREFIXES = ['/planner/']
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl
     const response = NextResponse.next({ request })
 
