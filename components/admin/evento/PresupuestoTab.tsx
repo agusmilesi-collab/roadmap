@@ -379,42 +379,51 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
         <div style={{ ...st.rubroCard, borderColor: isExpanded ? 'var(--color-gold)' : 'var(--color-border)' }}>
             {/* ── Summary row ──────────────────────────────────────────────── */}
             <button onClick={onToggle} style={st.rubroRowBtn}>
-                {/* Left: color bar + nombre + proveedor */}
+                {/* Color bar */}
                 <span style={{ width: 3, alignSelf: 'stretch', borderRadius: '99px', backgroundColor: rubroColor, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.1rem', textAlign: 'left' }}>
-                    <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {rubro.nombre}
-                    </span>
-                    {proveedor && (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+
+                {/* 2-row content */}
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.3rem', textAlign: 'left' }}>
+                    {/* Row 1: nombre · costo */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                            {rubro.nombre}
+                        </span>
+                        {costoNum > 0 && (
+                            <span style={{ fontSize: '0.82rem', fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                {moneda} {fmt(costoNum)}
+                            </span>
+                        )}
+                    </div>
+                    {/* Row 2: proveedor · badge + saldo + pagos */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
                             {proveedor}
                         </span>
-                    )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
+                            <span style={{ ...st.estadoBadge, ...ESTADO_STYLES[estado] }}>
+                                {ESTADO_OPTIONS.find(o => o.value === estado)?.label}
+                            </span>
+                            {costoUSD > 0 && (
+                                <span style={{ fontSize: '0.78rem', fontWeight: 600, whiteSpace: 'nowrap', color: saldoAPagarUSD <= 0 ? '#2E7D32' : '#D97706' }}>
+                                    {estaSaldado ? '✓ Saldado' : `Saldo: USD ${fmt(Math.max(0, saldoAPagarUSD), 0)}`}
+                                </span>
+                            )}
+                            {pagos.length > 0 ? (
+                                <span style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                    <span style={{ color: '#2E7D32', fontWeight: 500 }}>{pagosRealizados} ✓</span>
+                                    {pagosPendientes > 0 && <span style={{ color: 'var(--color-text-muted)' }}> · {pagosPendientes} pend.</span>}
+                                </span>
+                            ) : (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Sin pagos</span>
+                            )}
+                        </div>
+                    </div>
                 </div>
-                {/* Right: estado | costo | saldo | pagos | chevron */}
-                <span style={{ ...st.estadoBadge, ...ESTADO_STYLES[estado] }}>
-                    {ESTADO_OPTIONS.find(o => o.value === estado)?.label}
-                </span>
-                {costoNum > 0 && (
-                    <span style={{ fontSize: '0.82rem', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                        {moneda} {fmt(costoNum)}
-                    </span>
-                )}
-                {costoUSD > 0 && (
-                    <span style={{ fontSize: '0.78rem', fontWeight: 600, whiteSpace: 'nowrap', color: saldoAPagarUSD <= 0 ? '#2E7D32' : '#D97706' }}>
-                        {estaSaldado ? '✓ Saldado' : `Saldo: USD ${fmt(Math.max(0, saldoAPagarUSD), 0)}`}
-                    </span>
-                )}
-                {pagos.length > 0 ? (
-                    <span style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                        <span style={{ color: '#2E7D32', fontWeight: 500 }}>{pagosRealizados} ✓</span>
-                        {pagosPendientes > 0 && <span style={{ color: 'var(--color-text-muted)' }}> · {pagosPendientes} pend.</span>}
-                    </span>
-                ) : (
-                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Sin pagos</span>
-                )}
+
+                {/* Chevron */}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                    style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, color: 'var(--color-text-muted)' }}>
+                    style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, color: 'var(--color-text-muted)', alignSelf: 'center' }}>
                     <polyline points="6 9 12 15 18 9" />
                 </svg>
             </button>
