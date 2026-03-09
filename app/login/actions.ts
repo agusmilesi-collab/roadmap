@@ -37,6 +37,7 @@ export async function loginAction(
     }
 
     // Determine redirect
-    const redirect = user.email === ADMIN_EMAIL ? '/dashboard' : '/planner/dashboard'
-    return { redirect }
+    const redirectPath = user.email === ADMIN_EMAIL ? '/dashboard' : '/planner/dashboard'
+    return { redirect: redirectPath }
 }
+
