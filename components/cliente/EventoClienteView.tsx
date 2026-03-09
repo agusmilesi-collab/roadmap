@@ -38,9 +38,22 @@ export interface EventoCliente {
         proveedor: string | null
         monto_original: number | null
         moneda: string
+        tipo_cambio_propio: number | null
         sena_pct: number | null
         orden: number
         notas: string | null
+        costo_total: number | null
+        descripcion_servicio: string | null
+        pagos_proveedor: {
+            id: string
+            monto: number
+            moneda: string
+            tipo_cambio_snapshot: number | null
+            fecha: string
+            realizado: boolean
+            descripcion: string | null
+            created_at: string
+        }[]
     }[]
     planner: {
         nombre: string
@@ -205,7 +218,8 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                         <PresupuestoClienteTab
                             rubros={evento.rubros}
                             presupuestoUsd={evento.presupuesto_usd}
-                            tipoCambio={evento.tipo_cambio}
+                            tipoCambioInicial={evento.tipo_cambio}
+                            fechaEvento={evento.fecha_evento}
                         />
                     )}
                 </div>

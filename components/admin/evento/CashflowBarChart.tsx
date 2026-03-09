@@ -4,7 +4,23 @@ import {
     ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
     Tooltip, CartesianGrid,
 } from 'recharts'
-import type { Rubro, PagoProveedor } from './EventoDetailClient'
+
+// Minimal types — both admin and client can satisfy this shape
+export interface ChartPago {
+    id: string
+    monto: number
+    moneda: string
+    tipo_cambio_snapshot: number | null
+    fecha: string
+    realizado: boolean
+}
+
+export interface ChartRubro {
+    id: string
+    nombre: string
+    proveedor: string | null
+    pagos_proveedor?: ChartPago[]
+}
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -25,7 +41,7 @@ function fmtFull(n: number) {
     return n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
-function getChartMonths(rubros: Rubro[], fechaEvento: string): Date[] {
+function getChartMonths(rubros: ChartRubro[], fechaEvento: string): Date[] {
     const today = new Date()
     today.setDate(1); today.setHours(0, 0, 0, 0)
 
@@ -55,7 +71,7 @@ function getChartMonths(rubros: Rubro[], fechaEvento: string): Date[] {
     return months.length ? months : [new Date(today)]
 }
 
-function pagoToUSD(pago: PagoProveedor, fallbackTc: number): number {
+function pagoToUSD(pago: ChartPago, fallbackTc: number): number {
     if (pago.moneda === 'USD') return pago.monto
     const tc = pago.tipo_cambio_snapshot && pago.tipo_cambio_snapshot > 0
         ? pago.tipo_cambio_snapshot
@@ -121,7 +137,7 @@ function buildTooltip(rubros: Rubro[], showARS: boolean) {
 // ─── Chart ────────────────────────────────────────────────────────────────────
 
 export interface CashflowBarChartProps {
-    rubros: Rubro[]
+    rubros: ChartRubro[]
     fechaEvento: string
     tc: number
     showARS: boolean
@@ -130,7 +146,7 @@ export interface CashflowBarChartProps {
 export function CashflowBarChart({ rubros, fechaEvento, tc, showARS }: CashflowBarChartProps) {
     const months = getChartMonths(rubros, fechaEvento)
 
-    function toDisplay(pago: PagoProveedor): number {
+    function toDisplay(pago: ChartPago): number {
         const usd = pagoToUSD(pago, tc)
         return showARS ? usd * tc : usd
     }

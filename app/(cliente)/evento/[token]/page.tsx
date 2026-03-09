@@ -53,8 +53,13 @@ interface EventoClienteRow {
     }[]
     rubros: {
         id: string; nombre: string; estado: string; proveedor: string | null
-        monto_original: number | null; moneda: string; sena_pct: number | null
-        orden: number; notas: string | null
+        monto_original: number | null; moneda: string; tipo_cambio_propio: number | null
+        sena_pct: number | null; orden: number; notas: string | null
+        costo_total: number | null; descripcion_servicio: string | null
+        pagos_proveedor: {
+            id: string; monto: number; moneda: string; tipo_cambio_snapshot: number | null
+            fecha: string; realizado: boolean; descripcion: string | null; created_at: string
+        }[]
     }[]
 }
 
@@ -82,7 +87,11 @@ export default async function EventoClientePage({ params }: Props) {
             ),
             rubros (
                 id, nombre, estado, proveedor, monto_original, moneda,
-                sena_pct, orden, notas
+                tipo_cambio_propio, sena_pct, orden, notas,
+                costo_total, descripcion_servicio,
+                pagos_proveedor (
+                    id, monto, moneda, tipo_cambio_snapshot, fecha, realizado, descripcion, created_at
+                )
             )
         `)
         .eq('token_acceso', token)
@@ -116,6 +125,12 @@ export default async function EventoClientePage({ params }: Props) {
             seenRubros.add(r.id)
             return true
         })
+        .map((r) => ({
+            ...r,
+            pagos_proveedor: [...(r.pagos_proveedor ?? [])].sort(
+                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            ),
+        }))
 
     const planner = evento.planners && !Array.isArray(evento.planners)
         ? (evento.planners as { nombre: string; email: string; telefono: string | null })

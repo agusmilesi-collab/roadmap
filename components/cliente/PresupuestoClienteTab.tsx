@@ -1,30 +1,59 @@
-// Read-only Presupuesto tab for the client view
+'use client'
 
-interface Rubro {
+import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
+import type { CashflowBarChartProps } from '@/components/admin/evento/CashflowBarChart'
+import { RUBRO_COLORS } from '@/components/admin/evento/CashflowBarChart'
+
+const CashflowBarChart = dynamic<CashflowBarChartProps>(
+    () => import('@/components/admin/evento/CashflowBarChart').then(m => ({ default: m.CashflowBarChart })),
+    {
+        ssr: false,
+        loading: () => (
+            <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                Cargando gráfico…
+            </div>
+        ),
+    }
+)
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface PagoCliente {
+    id: string
+    monto: number
+    moneda: string
+    tipo_cambio_snapshot: number | null
+    fecha: string
+    realizado: boolean
+    descripcion: string | null
+    created_at: string
+}
+
+interface RubroCliente {
     id: string
     nombre: string
     estado: string
     proveedor: string | null
     monto_original: number | null
     moneda: string
+    tipo_cambio_propio: number | null
     sena_pct: number | null
     orden: number
     notas: string | null
+    costo_total: number | null
+    descripcion_servicio: string | null
+    pagos_proveedor: PagoCliente[]
 }
 
 interface Props {
-    rubros: Rubro[]
+    rubros: RubroCliente[]
     presupuestoUsd: number | null
-    tipoCambio: number | null
+    tipoCambioInicial: number | null
+    fechaEvento: string
 }
 
-const ESTADO_LABELS: Record<string, string> = {
-    pendiente: 'Pendiente',
-    en_proceso: 'En proceso',
-    decidido: 'Decidido',
-    señado: 'Señado',
-    completado: 'Completado',
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const ESTADO_STYLES: Record<string, React.CSSProperties> = {
     pendiente: { backgroundColor: 'rgba(120,120,120,0.08)', color: '#888' },
@@ -34,127 +63,325 @@ const ESTADO_STYLES: Record<string, React.CSSProperties> = {
     completado: { backgroundColor: 'rgba(40,167,69,0.12)', color: '#2E7D32' },
 }
 
+const ESTADO_LABELS: Record<string, string> = {
+    pendiente: 'Pendiente', en_proceso: 'En proceso', decidido: 'Decidido',
+    señado: 'Señado', completado: 'Completado',
+}
+
 function fmt(n: number, decimals = 0) {
     return n.toLocaleString('es-AR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
-export function PresupuestoClienteTab({ rubros, presupuestoUsd, tipoCambio }: Props) {
-    const tc = (tipoCambio ?? 0) > 0 ? tipoCambio! : 1
+async function fetchDolarBlue(): Promise<number | null> {
+    try {
+        const res = await fetch('https://dolarapi.com/v1/dolares/blue', { cache: 'no-store' })
+        const data = await res.json()
+        return typeof data.venta === 'number' ? data.venta : null
+    } catch { return null }
+}
 
-    function montoUSD(r: Rubro) {
-        if (!r.monto_original) return 0
-        return r.moneda === 'USD' ? r.monto_original : r.monto_original / tc
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export function PresupuestoClienteTab({ rubros, presupuestoUsd, tipoCambioInicial, fechaEvento }: Props) {
+    const [tcBlue, setTcBlue] = useState<number>(tipoCambioInicial ?? 0)
+    const [tcLoading, setTcLoading] = useState(true)
+    const [expandedId, setExpandedId] = useState<string | null>(null)
+
+    useEffect(() => {
+        fetchDolarBlue().then(val => {
+            if (val !== null) setTcBlue(val)
+            setTcLoading(false)
+        })
+    }, [])
+
+    const tc = tcBlue > 0 ? tcBlue : 1
+
+    function toUSD(monto: number, moneda: string, tcSnap?: number | null): number {
+        if (moneda === 'USD') return monto
+        return monto / (tcSnap && tcSnap > 0 ? tcSnap : tc)
     }
 
-    const comprometido = rubros
-        .filter((r) => r.estado !== 'pendiente')
-        .reduce((sum, r) => sum + montoUSD(r), 0)
+    // Budget calculations
+    const comprometidoUSD = rubros.reduce((sum, r) => {
+        const base = r.costo_total ?? r.monto_original
+        if (!base) return sum
+        return sum + toUSD(base, r.moneda, r.tipo_cambio_propio)
+    }, 0)
 
     const totalUSD = presupuestoUsd ?? 0
-    const disponible = totalUSD - comprometido
-    const pct = totalUSD > 0 ? Math.min(100, Math.round((comprometido / totalUSD) * 100)) : 0
+    const disponibleUSD = totalUSD - comprometidoUSD
+    const pct = totalUSD > 0 ? Math.min(100, Math.round((comprometidoUSD / totalUSD) * 100)) : 0
+    const hasPagos = rubros.some(r => r.pagos_proveedor.length > 0)
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {/* Tipo de cambio (display only) */}
-            {tipoCambio && tipoCambio > 0 && (
-                <div style={st.tcRow}>
-                    <span style={st.tcLabel}>Tipo de cambio</span>
-                    <span style={st.tcValue}>1 USD = {fmt(tipoCambio)} ARS</span>
-                </div>
-            )}
 
-            {/* Summary cards */}
-            <div style={st.grid}>
-                <SummaryCard
-                    label="Presupuesto total"
-                    value={`USD ${fmt(totalUSD)}`}
-                    sub={tipoCambio ? `ARS ${fmt(totalUSD * tc)}` : undefined}
-                    color="var(--color-text)"
-                />
-                <SummaryCard
-                    label="Comprometido"
-                    value={`USD ${fmt(comprometido)}`}
-                    sub={`${pct}% del total`}
-                    color={comprometido > totalUSD ? 'var(--color-error)' : 'var(--color-gold-dark)'}
-                />
-                <SummaryCard
-                    label="Disponible"
-                    value={`USD ${fmt(Math.max(0, disponible))}`}
-                    sub={disponible < 0 ? '⚠ Excedido' : undefined}
-                    color={disponible < 0 ? 'var(--color-error)' : 'var(--color-olive)'}
-                />
+            {/* ── BLOQUE 1: Resumen financiero ─────────────────────────────── */}
+            <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <p style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', margin: 0 }}>
+                        Resumen financiero
+                    </p>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: tcLoading ? '#D1D5DB' : '#22C55E' }} />
+                        TC blue: {tcLoading ? 'obteniendo…' : `$ ${fmt(tc)} ARS/USD`}
+                    </p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
+                    <FinancialCard
+                        label="Presupuesto total"
+                        usdValue={totalUSD}
+                        arsValue={totalUSD * tc}
+                        color="var(--color-text)"
+                    />
+                    <FinancialCard
+                        label="Comprometido"
+                        usdValue={comprometidoUSD}
+                        arsValue={comprometidoUSD * tc}
+                        color={comprometidoUSD > totalUSD ? 'var(--color-error)' : 'var(--color-gold-dark)'}
+                        sub={`${pct}% del presupuesto`}
+                    />
+                    <FinancialCard
+                        label="Disponible"
+                        usdValue={Math.max(0, disponibleUSD)}
+                        arsValue={Math.max(0, disponibleUSD) * tc}
+                        color={disponibleUSD < 0 ? 'var(--color-error)' : 'var(--color-olive)'}
+                        sub={disponibleUSD < 0 ? '⚠ Presupuesto excedido' : undefined}
+                    />
+                </div>
+
+                {totalUSD > 0 && (
+                    <div style={{ height: '6px', backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', borderRadius: '99px', transition: 'width 0.4s ease', width: `${pct}%`, backgroundColor: comprometidoUSD > totalUSD ? 'var(--color-error)' : 'var(--color-gold)' }} />
+                    </div>
+                )}
             </div>
 
-            {/* Budget bar */}
-            {totalUSD > 0 && (
-                <div style={st.bar}>
-                    <div style={{
-                        ...st.barFill,
-                        width: `${pct}%`,
-                        backgroundColor: comprometido > totalUSD ? 'var(--color-error)' : 'var(--color-gold)',
-                    }} />
+            {/* ── BLOQUE 2: Cashflow ───────────────────────────────────────── */}
+            {hasPagos && (
+                <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                        <p style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', margin: 0 }}>
+                            Cashflow de pagos
+                        </p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
+                            {rubros.filter(r => r.pagos_proveedor.length > 0).map(r => {
+                                const idx = rubros.indexOf(r)
+                                return (
+                                    <span key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: '2px', backgroundColor: RUBRO_COLORS[idx % RUBRO_COLORS.length], flexShrink: 0 }} />
+                                        {r.nombre}
+                                    </span>
+                                )
+                            })}
+                        </div>
+                    </div>
+                    <CashflowBarChart rubros={rubros} fechaEvento={fechaEvento} tc={tc} showARS={false} />
+                    <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ width: 10, height: 10, borderRadius: '2px', backgroundColor: '#7C8B70', flexShrink: 0 }} />
+                            Sólido = realizado
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ width: 10, height: 10, borderRadius: '2px', backgroundColor: '#7C8B70', opacity: 0.4, flexShrink: 0 }} />
+                            Transparente = pendiente
+                        </span>
+                    </div>
                 </div>
             )}
 
-            {/* Rubros */}
+            {/* ── BLOQUE 3: Rubros ─────────────────────────────────────────── */}
             {rubros.length === 0 ? (
-                <div style={st.empty}>No hay rubros definidos para este evento.</div>
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem', fontStyle: 'italic' }}>
+                    No hay rubros definidos para este evento.
+                </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {/* Column headers */}
-                    <div style={st.colHeaders}>
-                        <span style={{ flex: 2 }}>Rubro</span>
-                        <span>Estado</span>
-                        <span>Proveedor</span>
-                        <span style={{ textAlign: 'right' }}>Monto</span>
-                        <span style={{ textAlign: 'right' }}>Equiv. USD</span>
-                    </div>
-
-                    {rubros.map((r) => {
-                        const usd = montoUSD(r)
-                        return (
-                            <div key={r.id} style={st.rubroRow}>
-                                <span style={{ flex: 2, fontWeight: 500, fontSize: '0.88rem' }}>{r.nombre}</span>
-                                <span style={{ ...st.badge, ...ESTADO_STYLES[r.estado] }}>
-                                    {ESTADO_LABELS[r.estado] ?? r.estado}
-                                </span>
-                                <span style={st.muted}>{r.proveedor || '—'}</span>
-                                <span style={{ ...st.muted, textAlign: 'right', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                                    {r.monto_original ? `${fmt(r.monto_original)} ${r.moneda}` : '—'}
-                                </span>
-                                <span style={{ ...st.muted, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                    {r.monto_original ? `USD ${fmt(usd, 0)}` : '—'}
-                                </span>
-                            </div>
-                        )
-                    })}
+                    {rubros.map((rubro, idx) => (
+                        <RubroReadCard
+                            key={rubro.id}
+                            rubro={rubro}
+                            rubroColor={RUBRO_COLORS[idx % RUBRO_COLORS.length]}
+                            tc={tc}
+                            isExpanded={expandedId === rubro.id}
+                            onToggle={() => setExpandedId(expandedId === rubro.id ? null : rubro.id)}
+                        />
+                    ))}
                 </div>
             )}
         </div>
     )
 }
 
-function SummaryCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
+// ─── FinancialCard ────────────────────────────────────────────────────────────
+
+function FinancialCard({ label, usdValue, arsValue, color, sub }: {
+    label: string; usdValue: number; arsValue: number; color: string; sub?: string
+}) {
     return (
-        <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        <div style={{ padding: '1.1rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-cream)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
             <span style={{ fontSize: '0.7rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)' }}>{label}</span>
-            <span style={{ fontSize: '1.1rem', fontWeight: 700, color, fontFamily: 'var(--font-serif)' }}>{value}</span>
-            {sub && <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{sub}</span>}
+            <span style={{ fontSize: '1.1rem', fontWeight: 700, color, fontFamily: 'var(--font-serif)', lineHeight: 1.2 }}>
+                USD {fmt(usdValue)}
+            </span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                ARS {fmt(arsValue)}
+            </span>
+            {sub && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>{sub}</span>}
         </div>
     )
 }
 
+// ─── RubroReadCard ────────────────────────────────────────────────────────────
+
+function RubroReadCard({ rubro, rubroColor, tc, isExpanded, onToggle }: {
+    rubro: RubroCliente
+    rubroColor: string
+    tc: number
+    isExpanded: boolean
+    onToggle: () => void
+}) {
+    function toUSD(monto: number, moneda: string, tcSnap?: number | null): number {
+        if (moneda === 'USD') return monto
+        return monto / (tcSnap && tcSnap > 0 ? tcSnap : tc)
+    }
+
+    const costoNum = rubro.costo_total ?? rubro.monto_original ?? 0
+    const costoUSD = toUSD(costoNum, rubro.moneda, rubro.tipo_cambio_propio)
+    const pagos = rubro.pagos_proveedor
+
+    const totalPagadoUSD = pagos.reduce((s, p) => s + toUSD(p.monto, p.moneda, p.tipo_cambio_snapshot), 0)
+    const saldoUSD = costoUSD - totalPagadoUSD
+    const pagosRealizados = pagos.filter(p => p.realizado).length
+
+    return (
+        <div style={{ border: '1px solid', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-white)', overflow: 'hidden', transition: 'border-color 0.2s', borderColor: isExpanded ? 'var(--color-gold)' : 'var(--color-border)' }}>
+            {/* Collapsed row */}
+            <button
+                onClick={onToggle}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 0.85rem', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+            >
+                <span style={{ width: 3, height: 16, borderRadius: '99px', backgroundColor: rubroColor, flexShrink: 0 }} />
+                <span style={{ flex: 2, fontWeight: 500, fontSize: '0.88rem', color: 'var(--color-text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {rubro.nombre}
+                </span>
+                <span style={{ fontSize: '0.67rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap', ...ESTADO_STYLES[rubro.estado] }}>
+                    {ESTADO_LABELS[rubro.estado] ?? rubro.estado}
+                </span>
+                <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', minWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {rubro.proveedor || '—'}
+                </span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 500, whiteSpace: 'nowrap', minWidth: '100px', textAlign: 'right' }}>
+                    {costoNum > 0 ? `${fmt(costoNum)} ${rubro.moneda}` : '—'}
+                </span>
+                {pagos.length > 0 ? (
+                    <span style={{ fontSize: '0.75rem', minWidth: '80px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <span style={{ color: '#2E7D32', fontWeight: 500 }}>{pagosRealizados} ✓</span>
+                        {pagos.length - pagosRealizados > 0 && (
+                            <span style={{ color: 'var(--color-text-muted)' }}> · {pagos.length - pagosRealizados} pend.</span>
+                        )}
+                    </span>
+                ) : (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', minWidth: '80px', textAlign: 'right' }}>Sin pagos</span>
+                )}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                    style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, color: 'var(--color-text-muted)', marginLeft: '0.25rem' }}>
+                    <polyline points="6 9 12 15 18 9" />
+                </svg>
+            </button>
+
+            {/* Expanded detail */}
+            {isExpanded && (
+                <div style={{ padding: '1rem 1.1rem', backgroundColor: 'var(--color-cream)', borderTop: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+
+                    {/* Info grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.65rem' }}>
+                        {rubro.proveedor && (
+                            <div>
+                                <p style={st.fieldLabel}>Proveedor</p>
+                                <p style={st.fieldValue}>{rubro.proveedor}</p>
+                            </div>
+                        )}
+                        {costoNum > 0 && (
+                            <div>
+                                <p style={st.fieldLabel}>Costo total del servicio</p>
+                                <p style={st.fieldValue}>
+                                    {fmt(costoNum)} {rubro.moneda}
+                                    {rubro.moneda === 'ARS' && <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginLeft: '0.4rem' }}>≈ USD {fmt(costoUSD, 0)}</span>}
+                                </p>
+                            </div>
+                        )}
+                        {rubro.descripcion_servicio && (
+                            <div style={{ gridColumn: '1 / -1' }}>
+                                <p style={st.fieldLabel}>Descripción del servicio</p>
+                                <p style={{ ...st.fieldValue, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{rubro.descripcion_servicio}</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Pagos */}
+                    {pagos.length > 0 && (
+                        <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '0.75rem' }}>
+                            <p style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', margin: '0 0 0.6rem' }}>
+                                Pagos al proveedor
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                {pagos.map(pago => {
+                                    const pagoDate = new Date(pago.fecha + 'T00:00:00')
+                                    const dateStr = pagoDate.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
+                                    return (
+                                        <div key={pago.id} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', backgroundColor: pago.realizado ? 'rgba(46,125,50,0.05)' : 'var(--color-white)', border: '1px solid', borderColor: pago.realizado ? 'rgba(46,125,50,0.15)' : 'var(--color-border)' }}>
+                                            <span style={{ fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '100px' }}>
+                                                {fmt(pago.monto)} {pago.moneda}
+                                            </span>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', flex: 1 }}>
+                                                {dateStr}
+                                            </span>
+                                            {pago.descripcion && (
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', flex: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {pago.descripcion}
+                                                </span>
+                                            )}
+                                            {pago.realizado && pago.tipo_cambio_snapshot && (
+                                                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontStyle: 'italic', whiteSpace: 'nowrap' }}>
+                                                    TC {fmt(pago.tipo_cambio_snapshot)}
+                                                </span>
+                                            )}
+                                            <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0, ...(pago.realizado ? { backgroundColor: 'rgba(46,125,50,0.1)', color: '#2E7D32' } : { backgroundColor: 'rgba(120,120,120,0.08)', color: '#888' }) }}>
+                                                {pago.realizado ? '✓ Realizado' : 'Pendiente'}
+                                            </span>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+
+                            {/* Balance summary */}
+                            {costoUSD > 0 && (
+                                <div style={{ marginTop: '0.6rem', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-white)', border: '1px solid var(--color-border)', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                                        Total pagado: <strong style={{ color: 'var(--color-text)' }}>USD {fmt(totalPagadoUSD, 0)}</strong>
+                                    </span>
+                                    <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                                        Saldo pendiente:{' '}
+                                        <strong style={{ color: saldoUSD <= 0 ? '#2E7D32' : '#D97706' }}>
+                                            USD {fmt(Math.max(0, saldoUSD), 0)}
+                                        </strong>
+                                        {saldoUSD <= 0 && <span style={{ fontSize: '0.72rem', color: '#2E7D32', marginLeft: '0.35rem' }}>✓ Saldado</span>}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const st: Record<string, React.CSSProperties> = {
-    tcRow: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '0.5rem' },
-    tcLabel: { fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' },
-    tcValue: { fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-text)', padding: '0.25rem 0.65rem', backgroundColor: 'rgba(201,168,76,0.08)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(201,168,76,0.2)' },
-    grid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' },
-    bar: { height: '8px', backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden' },
-    barFill: { height: '100%', borderRadius: '99px', transition: 'width 0.4s ease' },
-    empty: { padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem', fontStyle: 'italic' },
-    colHeaders: { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0 1rem', fontSize: '0.67rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' },
-    rubroRow: { display: 'flex', alignItems: 'center', gap: '0.75rem', backgroundColor: 'var(--color-white)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '0.75rem 1rem' },
-    badge: { fontSize: '0.67rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0.15rem 0.5rem', borderRadius: '20px', whiteSpace: 'nowrap' },
-    muted: { fontSize: '0.8rem', color: 'var(--color-text-muted)', minWidth: '70px' },
+    fieldLabel: { fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', margin: '0 0 0.2rem' },
+    fieldValue: { fontSize: '0.88rem', color: 'var(--color-text)', margin: 0, fontWeight: 500 },
 }
