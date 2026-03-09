@@ -90,7 +90,13 @@ export default async function EventoDetailPage({ params }: Props) {
 
     const seenRubros = new Set<string>()
     const rubrosSorted = [...(evento.rubros ?? [])]
-        .sort((a, b) => a.orden - b.orden)
+        .sort((a, b) => {
+            // orden = 0 means never manually sorted → treat as Infinity, tiebreak alphabetically
+            const ao = a.orden === 0 ? Infinity : a.orden
+            const bo = b.orden === 0 ? Infinity : b.orden
+            if (ao !== bo) return ao < bo ? -1 : 1
+            return a.nombre.localeCompare(b.nombre, 'es')
+        })
         .filter((r) => { if (seenRubros.has(r.id)) return false; seenRubros.add(r.id); return true })
         .map((r) => ({
             ...r,

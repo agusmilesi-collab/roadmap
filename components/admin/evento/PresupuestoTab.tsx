@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useTransition, useRef, useEffect } from 'react'
+import { useState, useTransition, useRef, useEffect, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import type { Rubro, PagoProveedor } from './EventoDetailClient'
 import {
-    createRubro, updateRubro, deleteRubro,
+    createRubro, updateRubro, deleteRubro, reorderRubros,
     createPago, updatePago, deletePago,
 } from '@/app/(admin)/eventos/[id]/actions'
 import type { CashflowBarChartProps } from './CashflowBarChart'
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
+import type { DropResult, DraggableProvidedDraggableProps, DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
 
 const CashflowBarChart = dynamic<CashflowBarChartProps>(
     () => import('./CashflowBarChart').then(m => ({ default: m.CashflowBarChart })),
@@ -66,6 +68,39 @@ export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioIni
     const [showARS, setShowARS] = useState(false)
     const [expandedRubroId, setExpandedRubroId] = useState<string | null>(null)
     const [showAddRubro, setShowAddRubro] = useState(false)
+
+    // Custom drag order: null = use server order (alphabetical / saved), non-null = user reordered
+    const [customOrder, setCustomOrder] = useState<string[] | null>(null)
+
+    const orderedRubros = useMemo(() => {
+        if (customOrder === null) return rubros
+        const map = new Map(rubros.map(r => [r.id, r]))
+        return customOrder.map(id => map.get(id)).filter((r): r is Rubro => r !== undefined)
+    }, [rubros, customOrder])
+
+    // Add any newly created rubros (from revalidated props) to the end of customOrder
+    useEffect(() => {
+        if (customOrder !== null) {
+            const existing = new Set(customOrder)
+            const newIds = rubros.filter(r => !existing.has(r.id)).map(r => r.id)
+            if (newIds.length > 0) setCustomOrder(prev => prev ? [...prev, ...newIds] : null)
+        }
+    }, [rubros]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    const [isDragging, setIsDragging] = useState(false)
+    const [dndPending, startDndTransition] = useTransition()
+
+    function handleDragEnd(result: DropResult) {
+        setIsDragging(false)
+        if (!result.destination || result.source.index === result.destination.index) return
+        const next = Array.from(orderedRubros)
+        const [moved] = next.splice(result.source.index, 1)
+        next.splice(result.destination.index, 0, moved)
+        setCustomOrder(next.map(r => r.id))
+        startDndTransition(async () => {
+            await reorderRubros(eventoId, next.map((r, i) => ({ id: r.id, orden: i + 1 })))
+        })
+    }
 
     useEffect(() => {
         fetchDolarBlue().then(val => {
@@ -213,25 +248,43 @@ export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioIni
             )}
 
             {/* ── Rubros ─────────────────────────────────────────────────────── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {rubros.length === 0 && (
-                    <div className="card" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-                        Sin rubros aún. Agregá el primero abajo.
-                    </div>
-                )}
+            {rubros.length === 0 && (
+                <div className="card" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+                    Sin rubros aún. Agregá el primero abajo.
+                </div>
+            )}
 
-                {rubros.map((rubro, idx) => (
-                    <RubroCard
-                        key={rubro.id}
-                        rubro={rubro}
-                        rubroColor={RUBRO_COLORS[idx % RUBRO_COLORS.length]}
-                        eventoId={eventoId}
-                        tipoCambio={tc}
-                        isExpanded={expandedRubroId === rubro.id}
-                        onToggle={() => setExpandedRubroId(expandedRubroId === rubro.id ? null : rubro.id)}
-                    />
-                ))}
-            </div>
+            <DragDropContext onDragStart={() => setIsDragging(true)} onDragEnd={handleDragEnd}>
+                <Droppable droppableId="rubros">
+                    {(provided) => (
+                        <div
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', opacity: dndPending ? 0.7 : 1, transition: 'opacity 0.15s' }}
+                        >
+                            {orderedRubros.map((rubro, idx) => (
+                                <Draggable key={rubro.id} draggableId={rubro.id} index={idx}>
+                                    {(provided, snapshot) => (
+                                        <RubroCard
+                                            rubro={rubro}
+                                            rubroColor={RUBRO_COLORS[idx % RUBRO_COLORS.length]}
+                                            eventoId={eventoId}
+                                            tipoCambio={tc}
+                                            isExpanded={!isDragging && expandedRubroId === rubro.id}
+                                            onToggle={() => setExpandedRubroId(expandedRubroId === rubro.id ? null : rubro.id)}
+                                            innerRef={provided.innerRef}
+                                            draggableProps={provided.draggableProps}
+                                            dragHandleProps={provided.dragHandleProps}
+                                            isDragging={snapshot.isDragging}
+                                        />
+                                    )}
+                                </Draggable>
+                            ))}
+                            {provided.placeholder}
+                        </div>
+                    )}
+                </Droppable>
+            </DragDropContext>
 
             {/* ── Add Rubro ──────────────────────────────────────────────────── */}
             {showAddRubro ? (
@@ -284,8 +337,15 @@ function FinancialCard({ label, usdValue, arsValue, showARS, color, sub }: {
 
 // ─── RubroCard ────────────────────────────────────────────────────────────────
 
-function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onToggle }: {
-    rubro: Rubro; rubroColor: string; eventoId: string; tipoCambio: number; isExpanded: boolean; onToggle: () => void
+function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onToggle,
+    innerRef, draggableProps, dragHandleProps, isDragging,
+}: {
+    rubro: Rubro; rubroColor: string; eventoId: string; tipoCambio: number
+    isExpanded: boolean; onToggle: () => void
+    innerRef?: (el: HTMLDivElement | null) => void
+    draggableProps?: DraggableProvidedDraggableProps
+    dragHandleProps?: DraggableProvidedDragHandleProps | null
+    isDragging?: boolean
 }) {
     const [isPending, startTransition] = useTransition()
     const [confirmDelete, setConfirmDelete] = useState(false)
@@ -376,9 +436,34 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
     }
 
     return (
-        <div style={{ ...st.rubroCard, borderColor: isExpanded ? 'var(--color-gold)' : 'var(--color-border)' }}>
+        <div
+            ref={innerRef}
+            {...draggableProps}
+            style={{
+                ...st.rubroCard,
+                borderColor: isDragging ? 'var(--color-gold)' : isExpanded ? 'var(--color-gold)' : 'var(--color-border)',
+                boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.12)' : undefined,
+                ...draggableProps?.style,
+            }}
+        >
             {/* ── Summary row ──────────────────────────────────────────────── */}
-            <button onClick={onToggle} style={st.rubroRowBtn}>
+            <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                {/* Drag handle */}
+                <div
+                    {...(dragHandleProps ?? {})}
+                    style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        padding: '0 0.35rem 0 0.65rem', cursor: 'grab', flexShrink: 0,
+                        color: 'var(--color-text-muted)', opacity: 0.45,
+                        userSelect: 'none',
+                    }}
+                >
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
+                        <circle cx="5" cy="3" r="1.5" /><circle cx="5" cy="8" r="1.5" /><circle cx="5" cy="13" r="1.5" />
+                        <circle cx="11" cy="3" r="1.5" /><circle cx="11" cy="8" r="1.5" /><circle cx="11" cy="13" r="1.5" />
+                    </svg>
+                </div>
+            <button onClick={onToggle} style={{ ...st.rubroRowBtn, flex: 1, paddingLeft: '0.5rem' }}>
                 {/* Color bar */}
                 <span style={{ width: 3, alignSelf: 'stretch', borderRadius: '99px', backgroundColor: rubroColor, flexShrink: 0 }} />
 
@@ -428,6 +513,7 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
                     <polyline points="6 9 12 15 18 9" />
                 </svg>
             </button>
+            </div>{/* end flex row: drag handle + button */}
 
             {/* ── Expanded ─────────────────────────────────────────────────── */}
             {isExpanded && (
@@ -751,7 +837,7 @@ function TrashIcon() {
 const st: Record<string, React.CSSProperties> = {
     summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' },
     rubroCard: { border: '1px solid', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-white)', overflow: 'hidden', transition: 'border-color 0.2s' },
-    rubroRowBtn: { display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 0.85rem', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' },
+    rubroRowBtn: { display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 0.85rem', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' },
     estadoBadge: { fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap' },
     rubroDetail: { padding: '1rem 1.1rem', backgroundColor: 'var(--color-cream)', borderTop: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' },
     rubroGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' },

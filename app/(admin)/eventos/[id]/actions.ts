@@ -214,7 +214,7 @@ export async function createRubro(eventoId: string, nombre: string) {
         nombre,
         estado: 'pendiente' as EstadoRubro,
         moneda: 'USD' as Moneda,
-        orden: (last?.orden ?? 0) + 1,
+        orden: 0,          // 0 = unordered; will be sorted alphabetically until user drags
         proveedor: null,
         monto_original: null,
         sena_pct: null,
@@ -222,6 +222,7 @@ export async function createRubro(eventoId: string, nombre: string) {
         fecha_sena: null,
         notas: null,
     })
+    void last // suppress unused warning
     revalidate(eventoId)
 }
 
@@ -246,6 +247,14 @@ export async function updateRubro(
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from('rubros').update(data).eq('id', id)
+    revalidate(eventoId)
+}
+
+export async function reorderRubros(eventoId: string, items: { id: string; orden: number }[]) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    await Promise.all(items.map(({ id, orden }) => db.from('rubros').update({ orden }).eq('id', id)))
     revalidate(eventoId)
 }
 
