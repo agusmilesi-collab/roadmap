@@ -152,7 +152,7 @@ export function PresupuestoClienteTab({ rubros, presupuestoUsd, tipoCambioInicia
                     </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
+                <div className="budget-cards-grid">
                     <FinancialCard
                         label="Presupuesto total"
                         usdValue={totalUSD}
@@ -381,25 +381,41 @@ function RubroReadCard({ rubro, rubroColor, tc, showARS, isExpanded, onToggle }:
                                 {pagos.map(pago => {
                                     const pagoDate = new Date(pago.fecha + 'T00:00:00')
                                     const dateStr = pagoDate.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
+                                    const badgeStyle: React.CSSProperties = pago.realizado
+                                        ? { backgroundColor: 'rgba(46,125,50,0.1)', color: '#2E7D32' }
+                                        : { backgroundColor: 'rgba(120,120,120,0.08)', color: '#888' }
                                     return (
-                                        <div key={pago.id} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', backgroundColor: pago.realizado ? 'rgba(46,125,50,0.05)' : 'var(--color-white)', border: '1px solid', borderColor: pago.realizado ? 'rgba(46,125,50,0.15)' : 'var(--color-border)' }}>
-                                            <span style={{ fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '110px' }}>
+                                        <div
+                                            key={pago.id}
+                                            className="pago-row-cliente"
+                                            style={{
+                                                padding: '0.5rem 0.75rem',
+                                                borderRadius: 'var(--radius-sm)',
+                                                backgroundColor: pago.realizado ? 'rgba(46,125,50,0.05)' : 'var(--color-white)',
+                                                border: '1px solid',
+                                                borderColor: pago.realizado ? 'rgba(46,125,50,0.15)' : 'var(--color-border)',
+                                            }}
+                                        >
+                                            {/* Monto */}
+                                            <span className="pago-monto" style={{ fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
                                                 {fmtAmt(toUSD(pago.monto, pago.moneda, pago.tipo_cambio_snapshot))}
                                             </span>
-                                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', flex: 1 }}>
-                                                {dateStr}
+                                            {/* Secondary info: fecha + descripción + TC */}
+                                            <span className="pago-details" style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                                                <span style={{ whiteSpace: 'nowrap' }}>{dateStr}</span>
+                                                {pago.descripcion && (
+                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {pago.descripcion}
+                                                    </span>
+                                                )}
+                                                {pago.realizado && pago.tipo_cambio_snapshot && (
+                                                    <span style={{ fontStyle: 'italic', whiteSpace: 'nowrap' }}>
+                                                        TC {fmt(pago.tipo_cambio_snapshot)}
+                                                    </span>
+                                                )}
                                             </span>
-                                            {pago.descripcion && (
-                                                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', flex: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                    {pago.descripcion}
-                                                </span>
-                                            )}
-                                            {pago.realizado && pago.tipo_cambio_snapshot && (
-                                                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', fontStyle: 'italic', whiteSpace: 'nowrap' }}>
-                                                    TC {fmt(pago.tipo_cambio_snapshot)}
-                                                </span>
-                                            )}
-                                            <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0, ...(pago.realizado ? { backgroundColor: 'rgba(46,125,50,0.1)', color: '#2E7D32' } : { backgroundColor: 'rgba(120,120,120,0.08)', color: '#888' }) }}>
+                                            {/* Badge */}
+                                            <span className="pago-badge" style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap', alignSelf: 'center', ...badgeStyle }}>
                                                 {pago.realizado ? '✓ Realizado' : 'Pendiente'}
                                             </span>
                                         </div>

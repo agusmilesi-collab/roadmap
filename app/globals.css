@@ -330,3 +330,53 @@ a:hover {
     transform: rotate(360deg);
   }
 }
+
+/* ─── Presupuesto cliente — responsive ───────────────────────────────────────── */
+
+/* 3 financial cards: 1 column on mobile, 3 on desktop */
+.budget-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+@media (min-width: 560px) {
+  .budget-cards-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/*
+ * Pago row in client view.
+ *
+ * Mobile  (< 560px): 2-row grid
+ *   [monto         ] [badge]
+ *   [details...............]
+ *
+ * Desktop (≥ 560px): single flex row
+ *   [monto] [details.....] [badge]
+ */
+.pago-row-cliente {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.5rem;
+  row-gap: 0.2rem;
+}
+.pago-monto  { grid-column: 1; grid-row: 1; align-self: center; }
+.pago-badge  { grid-column: 2; grid-row: 1; align-self: center; }
+.pago-details {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+@media (min-width: 560px) {
+  .pago-row-cliente {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.65rem;
+  }
+  .pago-monto  { flex: none; }
+  .pago-details { flex: 1; }
+  .pago-badge  { flex: none; }
+}
