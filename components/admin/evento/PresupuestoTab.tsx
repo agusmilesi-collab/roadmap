@@ -1,11 +1,25 @@
 'use client'
 
-import { useState, useTransition, useRef } from 'react'
+import { useState, useTransition, useRef, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import type { Rubro, PagoProveedor } from './EventoDetailClient'
 import {
-    createRubro, updateRubro, deleteRubro, updateTipoCambio,
+    createRubro, updateRubro, deleteRubro,
     createPago, updatePago, deletePago,
 } from '@/app/(admin)/eventos/[id]/actions'
+import type { CashflowBarChartProps } from './CashflowBarChart'
+
+const CashflowBarChart = dynamic<CashflowBarChartProps>(
+    () => import('./CashflowBarChart').then(m => ({ default: m.CashflowBarChart })),
+    {
+        ssr: false,
+        loading: () => (
+            <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                Cargando gráfico…
+            </div>
+        ),
+    }
+)
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -45,73 +59,158 @@ interface Props {
     eventoId: string
     presupuestoUsd: number | null
     tipoCambioInicial: number | null
+    fechaEvento: string
 }
 
-export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioInicial }: Props) {
-    const [tipoCambio, setTipoCambio] = useState(tipoCambioInicial ?? 0)
-    const [tipoCambioInput, setTipoCambioInput] = useState(String(tipoCambioInicial ?? ''))
+export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioInicial, fechaEvento }: Props) {
+    const [tcBlue, setTcBlue] = useState<number>(tipoCambioInicial ?? 0)
+    const [tcLoading, setTcLoading] = useState(true)
+    const [showARS, setShowARS] = useState(false)
     const [expandedRubroId, setExpandedRubroId] = useState<string | null>(null)
     const [showAddRubro, setShowAddRubro] = useState(false)
-    const [isSavingTipo, startSavingTipo] = useTransition()
 
-    function handleTipoCambioBlur() {
-        const val = parseFloat(tipoCambioInput)
-        if (isNaN(val) || val <= 0) return
-        setTipoCambio(val)
-        startSavingTipo(async () => { await updateTipoCambio(eventoId, val) })
+    useEffect(() => {
+        fetchDolarBlue().then(val => {
+            if (val !== null) setTcBlue(val)
+            setTcLoading(false)
+        })
+    }, [])
+
+    const tc = tcBlue > 0 ? tcBlue : 1
+
+    function toUSD(monto: number, moneda: string, tcSnap?: number | null): number {
+        if (moneda === 'USD') return monto
+        return monto / (tcSnap && tcSnap > 0 ? tcSnap : tc)
     }
 
     // ── Budget calculations ──────────────────────────────────────────────────
-    const tc = tipoCambio > 0 ? tipoCambio : 1
-
-    function montoUSD(r: Rubro) {
+    const comprometidoUSD = rubros.reduce((sum, r) => {
         const base = r.costo_total ?? r.monto_original
-        if (!base) return 0
-        const tcEf = r.tipo_cambio_propio && r.tipo_cambio_propio > 0 ? r.tipo_cambio_propio : tc
-        return r.moneda === 'USD' ? base : base / tcEf
-    }
-
-    const comprometido = rubros
-        .filter((r) => r.estado !== 'pendiente')
-        .reduce((sum, r) => sum + montoUSD(r), 0)
+        if (!base) return sum
+        return sum + toUSD(base, r.moneda, r.tipo_cambio_propio)
+    }, 0)
 
     const totalUSD = presupuestoUsd ?? 0
-    const disponible = totalUSD - comprometido
-    const pctComprometido = totalUSD > 0 ? Math.min(100, Math.round((comprometido / totalUSD) * 100)) : 0
+    const disponibleUSD = totalUSD - comprometidoUSD
+    const pctComprometido = totalUSD > 0 ? Math.min(100, Math.round((comprometidoUSD / totalUSD) * 100)) : 0
+
+    const hasPagos = rubros.some(r => (r.pagos_proveedor ?? []).length > 0)
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {/* ── Tipo de cambio ─────────────────────────────────────────────── */}
-            <div className="card" style={st.tipoCambioCard}>
-                <span style={st.tipoCambioLabel}>Tipo de cambio</span>
-                <div style={st.tipoCambioRow}>
-                    <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>ARS 1 USD =</span>
-                    <input
-                        type="number"
-                        min="1"
-                        step="10"
-                        value={tipoCambioInput}
-                        onChange={e => setTipoCambioInput(e.target.value)}
-                        onBlur={handleTipoCambioBlur}
-                        className="form-input"
-                        style={{ width: '120px', fontSize: '0.95rem', textAlign: 'right', fontWeight: 600 }}
-                    />
-                    <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>ARS</span>
-                    {isSavingTipo && <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>Guardando…</span>}
+
+            {/* ── BLOQUE 1: Resumen financiero ─────────────────────────────── */}
+            <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                    <div>
+                        <p style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', margin: 0 }}>
+                            Resumen financiero
+                        </p>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '0.2rem 0 0', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: tcLoading ? '#D1D5DB' : '#22C55E' }} />
+                            TC blue: {tcLoading ? 'obteniendo…' : `$ ${fmt(tc)} ARS/USD`}
+                        </p>
+                    </div>
+                    {/* USD / ARS toggle */}
+                    <div style={{ display: 'flex', borderRadius: '20px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+                        {(['USD', 'ARS'] as const).map(cur => (
+                            <button
+                                key={cur}
+                                type="button"
+                                onClick={() => setShowARS(cur === 'ARS')}
+                                style={{
+                                    padding: '0.28rem 0.9rem',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontFamily: 'var(--font-sans)',
+                                    fontWeight: 600,
+                                    fontSize: '0.78rem',
+                                    background: (cur === 'ARS') === showARS ? 'var(--color-gold)' : 'transparent',
+                                    color: (cur === 'ARS') === showARS ? 'white' : 'var(--color-text-muted)',
+                                    transition: 'background 0.15s, color 0.15s',
+                                }}
+                            >{cur}</button>
+                        ))}
+                    </div>
                 </div>
+
+                {/* Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
+                    <FinancialCard
+                        label="Presupuesto total"
+                        usdValue={totalUSD}
+                        arsValue={totalUSD * tc}
+                        showARS={showARS}
+                        color="var(--color-text)"
+                    />
+                    <FinancialCard
+                        label="Comprometido"
+                        usdValue={comprometidoUSD}
+                        arsValue={comprometidoUSD * tc}
+                        showARS={showARS}
+                        color={comprometidoUSD > totalUSD ? 'var(--color-error)' : 'var(--color-gold-dark)'}
+                        sub={`${pctComprometido}% del presupuesto`}
+                    />
+                    <FinancialCard
+                        label="Disponible"
+                        usdValue={Math.max(0, disponibleUSD)}
+                        arsValue={Math.max(0, disponibleUSD) * tc}
+                        showARS={showARS}
+                        color={disponibleUSD < 0 ? 'var(--color-error)' : 'var(--color-olive)'}
+                        sub={disponibleUSD < 0 ? '⚠ Presupuesto excedido' : undefined}
+                    />
+                </div>
+
+                {/* Budget bar */}
+                {totalUSD > 0 && (
+                    <div style={{ height: '6px', backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden' }}>
+                        <div style={{
+                            height: '100%', borderRadius: '99px', transition: 'width 0.3s ease',
+                            width: `${pctComprometido}%`,
+                            backgroundColor: comprometidoUSD > totalUSD ? 'var(--color-error)' : 'var(--color-gold)',
+                        }} />
+                    </div>
+                )}
             </div>
 
-            {/* ── Summary cards ──────────────────────────────────────────────── */}
-            <div style={st.summaryGrid}>
-                <SummaryCard label="Presupuesto total" value={`USD ${fmt(totalUSD)}`} sub={tipoCambio > 0 ? `ARS ${fmt(totalUSD * tc)}` : undefined} color="var(--color-text)" />
-                <SummaryCard label="Comprometido" value={`USD ${fmt(comprometido)}`} sub={`${pctComprometido}% del presupuesto`} color={comprometido > totalUSD ? 'var(--color-error)' : 'var(--color-gold-dark)'} />
-                <SummaryCard label="Disponible" value={`USD ${fmt(Math.max(0, disponible))}`} sub={disponible < 0 ? '⚠ Presupuesto excedido' : undefined} color={disponible < 0 ? 'var(--color-error)' : 'var(--color-olive)'} />
-            </div>
-
-            {/* ── Budget progress ─────────────────────────────────────────────── */}
-            {totalUSD > 0 && (
-                <div style={st.budgetBar}>
-                    <div style={{ ...st.budgetFill, width: `${pctComprometido}%`, backgroundColor: comprometido > totalUSD ? 'var(--color-error)' : 'var(--color-gold)' }} />
+            {/* ── BLOQUE 2: Cashflow ───────────────────────────────────────── */}
+            {hasPagos && (
+                <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                        <p style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', margin: 0 }}>
+                            Cashflow de pagos
+                        </p>
+                        {/* Rubro legend */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
+                            {rubros.filter(r => (r.pagos_proveedor ?? []).length > 0).map((r, i) => {
+                                const globalIdx = rubros.indexOf(r)
+                                const color = RUBRO_COLORS[globalIdx % RUBRO_COLORS.length]
+                                return (
+                                    <span key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: '2px', backgroundColor: color, flexShrink: 0 }} />
+                                        {r.nombre}
+                                    </span>
+                                )
+                            })}
+                        </div>
+                    </div>
+                    <CashflowBarChart
+                        rubros={rubros}
+                        fechaEvento={fechaEvento}
+                        tc={tc}
+                        showARS={showARS}
+                    />
+                    <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ width: 10, height: 10, borderRadius: '2px', backgroundColor: '#7C8B70', flexShrink: 0 }} />
+                            Sólido = realizado
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ width: 10, height: 10, borderRadius: '2px', backgroundColor: '#7C8B70', opacity: 0.4, flexShrink: 0 }} />
+                            Transparente = pendiente
+                        </span>
+                    </div>
                 </div>
             )}
 
@@ -123,10 +222,11 @@ export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioIni
                     </div>
                 )}
 
-                {rubros.map((rubro) => (
+                {rubros.map((rubro, idx) => (
                     <RubroCard
                         key={rubro.id}
                         rubro={rubro}
+                        rubroColor={RUBRO_COLORS[idx % RUBRO_COLORS.length]}
                         eventoId={eventoId}
                         tipoCambio={tc}
                         isExpanded={expandedRubroId === rubro.id}
@@ -148,22 +248,46 @@ export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioIni
     )
 }
 
-// ─── SummaryCard ──────────────────────────────────────────────────────────────
+// ─── RUBRO_COLORS (re-exported for chart) ────────────────────────────────────
 
-function SummaryCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
+const RUBRO_COLORS = [
+    '#7C8B70', '#C9A84C', '#6B7F9E', '#C17B5C', '#8B7C9E',
+    '#5C8B7C', '#9E7C6B', '#6B8B5C', '#9E6B7C', '#5C6B8B',
+]
+
+// ─── FinancialCard ────────────────────────────────────────────────────────────
+
+function FinancialCard({ label, usdValue, arsValue, showARS, color, sub }: {
+    label: string
+    usdValue: number
+    arsValue: number
+    showARS: boolean
+    color: string
+    sub?: string
+}) {
+    const primary = showARS ? arsValue : usdValue
+    const secondary = showARS ? usdValue : arsValue
+    const primaryPrefix = showARS ? 'ARS' : 'USD'
+    const secondaryPrefix = showARS ? 'USD' : 'ARS'
+
     return (
-        <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)' }}>{label}</span>
-            <span style={{ fontSize: '1.15rem', fontWeight: 700, color, fontFamily: 'var(--font-serif)' }}>{value}</span>
-            {sub && <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{sub}</span>}
+        <div style={{ padding: '1.1rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-cream)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+            <span style={{ fontSize: '0.7rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)' }}>{label}</span>
+            <span style={{ fontSize: '1.1rem', fontWeight: 700, color, fontFamily: 'var(--font-serif)', lineHeight: 1.2 }}>
+                {primaryPrefix} {fmt(primary)}
+            </span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                {secondaryPrefix} {fmt(secondary)}
+            </span>
+            {sub && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>{sub}</span>}
         </div>
     )
 }
 
 // ─── RubroCard ────────────────────────────────────────────────────────────────
 
-function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
-    rubro: Rubro; eventoId: string; tipoCambio: number; isExpanded: boolean; onToggle: () => void
+function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onToggle }: {
+    rubro: Rubro; rubroColor: string; eventoId: string; tipoCambio: number; isExpanded: boolean; onToggle: () => void
 }) {
     const [isPending, startTransition] = useTransition()
     const [confirmDelete, setConfirmDelete] = useState(false)
@@ -186,7 +310,6 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
     const costoNum = parseFloat(costoTotal) || 0
     const costoUSD = moneda === 'USD' ? costoNum : costoNum / tcEfectivo
 
-    // Pagos summary for collapsed row
     const pagos = rubro.pagos_proveedor ?? []
     const pagosRealizados = pagos.filter(p => p.realizado).length
     const pagosPendientes = pagos.length - pagosRealizados
@@ -217,8 +340,9 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
 
     return (
         <div style={{ ...st.rubroCard, borderColor: isExpanded ? 'var(--color-gold)' : 'var(--color-border)' }}>
-            {/* ── Summary row (collapsed) ───────────────────────────────────── */}
+            {/* ── Summary row ──────────────────────────────────────────────── */}
             <button onClick={onToggle} style={st.rubroRowBtn}>
+                <span style={{ width: 3, height: 16, borderRadius: '99px', backgroundColor: rubroColor, flexShrink: 0 }} />
                 <span style={{ flex: 2, fontWeight: 500, fontSize: '0.88rem', textAlign: 'left', color: 'var(--color-text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {rubro.nombre}
                 </span>
@@ -228,14 +352,14 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
                 <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', minWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {rubro.proveedor || '—'}
                 </span>
-                <span style={{ fontSize: '0.82rem', textAlign: 'right', fontWeight: 500, whiteSpace: 'nowrap', minWidth: '100px' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 500, whiteSpace: 'nowrap', minWidth: '100px', textAlign: 'right' }}>
                     {costoNum > 0 ? `${fmt(costoNum)} ${moneda}` : '—'}
                 </span>
-                <span style={{ fontSize: '0.82rem', textAlign: 'right', color: 'var(--color-text-muted)', minWidth: '80px' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', minWidth: '80px', textAlign: 'right' }}>
                     {costoNum > 0 ? `≈ USD ${fmt(costoUSD, 0)}` : '—'}
                 </span>
                 {pagos.length > 0 ? (
-                    <span style={{ fontSize: '0.75rem', textAlign: 'right', minWidth: '90px', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: '0.75rem', minWidth: '90px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <span style={{ color: '#2E7D32', fontWeight: 500 }}>{pagosRealizados} ✓</span>
                         {pagosPendientes > 0 && <span style={{ color: 'var(--color-text-muted)' }}> · {pagosPendientes} pend.</span>}
                     </span>
@@ -248,11 +372,10 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
                 </svg>
             </button>
 
-            {/* ── Expanded detail ──────────────────────────────────────────── */}
+            {/* ── Expanded ─────────────────────────────────────────────────── */}
             {isExpanded && (
                 <div style={st.rubroDetail}>
 
-                    {/* Section: Datos del rubro */}
                     <p style={st.sectionTitle}>Datos del rubro</p>
                     <div style={st.rubroGrid}>
                         <div className="form-group" style={{ gridColumn: '1 / -1' }}>
@@ -271,18 +394,10 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
                         </div>
                         <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                             <label className="form-label">Descripción del servicio contratado</label>
-                            <textarea
-                                value={descripcionServicio}
-                                onChange={e => setDescripcionServicio(e.target.value)}
-                                className="form-input"
-                                rows={2}
-                                style={{ resize: 'vertical', fontFamily: 'var(--font-sans)', fontSize: '0.88rem' }}
-                                placeholder="Detalle del servicio, condiciones, etc."
-                            />
+                            <textarea value={descripcionServicio} onChange={e => setDescripcionServicio(e.target.value)} className="form-input" rows={2} style={{ resize: 'vertical', fontFamily: 'var(--font-sans)', fontSize: '0.88rem' }} placeholder="Detalle del servicio, condiciones, etc." />
                         </div>
                     </div>
 
-                    {/* Section: Costo y finanzas */}
                     <p style={st.sectionTitle}>Costo y finanzas</p>
                     <div style={st.rubroGrid}>
                         <div className="form-group">
@@ -304,7 +419,7 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
                                         {tcPropio ? '' : `usando ${fmt(tipoCambio)}`}
                                     </span>
                                 </label>
-                                <input type="number" min="1" step="10" value={tcPropio} onChange={e => setTcPropio(e.target.value)} className="form-input" placeholder={`${fmt(tipoCambio)} (evento)`} />
+                                <input type="number" min="1" step="10" value={tcPropio} onChange={e => setTcPropio(e.target.value)} className="form-input" placeholder={`${fmt(tipoCambio)} (blue)`} />
                             </div>
                         )}
                         <div className="form-group">
@@ -325,44 +440,29 @@ function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
                         </div>
                     </div>
 
-                    {/* Computed summary */}
                     {costoNum > 0 && (
                         <div style={st.computedRow}>
                             <span style={st.computedItem}>Equivalente USD: <strong>USD {fmt(costoUSD, 0)}</strong></span>
                             {parseFloat(senaPct) > 0 && <span style={st.computedItem}>Monto seña: <strong>USD {fmt(costoUSD * (parseFloat(senaPct) / 100), 0)}</strong> ({senaPct}%)</span>}
-                            {moneda === 'ARS' && <span style={st.computedItem}>TC usado: <strong>{fmt(tcEfectivo)} ARS/USD</strong>{rubro.tipo_cambio_propio ? ' (propio)' : ' (evento)'}</span>}
+                            {moneda === 'ARS' && <span style={st.computedItem}>TC usado: <strong>{fmt(tcEfectivo)} ARS/USD</strong>{rubro.tipo_cambio_propio ? ' (propio)' : ' (blue)'}</span>}
                         </div>
                     )}
 
-                    {/* Section: Pagos */}
+                    {/* Pagos */}
                     <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '0.85rem' }}>
                         <p style={{ ...st.sectionTitle, marginBottom: '0.6rem' }}>Pagos al proveedor</p>
-
                         {pagos.length === 0 && !showAddPago && (
-                            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', fontStyle: 'italic', marginBottom: '0.5rem' }}>
-                                Sin pagos registrados.
-                            </p>
+                            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', fontStyle: 'italic', marginBottom: '0.5rem' }}>Sin pagos registrados.</p>
                         )}
-
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                             {pagos.map(pago => (
                                 <PagoRow key={pago.id} pago={pago} eventoId={eventoId} />
                             ))}
                         </div>
-
                         {showAddPago ? (
-                            <AddPagoForm
-                                rubroId={rubro.id}
-                                eventoId={eventoId}
-                                onDone={() => setShowAddPago(false)}
-                            />
+                            <AddPagoForm rubroId={rubro.id} eventoId={eventoId} onDone={() => setShowAddPago(false)} />
                         ) : (
-                            <button
-                                type="button"
-                                className="btn-ghost"
-                                style={{ marginTop: pagos.length > 0 ? '0.5rem' : '0', fontSize: '0.8rem', padding: '0.35rem 0.75rem', gap: '0.35rem', display: 'flex', alignItems: 'center' }}
-                                onClick={() => setShowAddPago(true)}
-                            >
+                            <button type="button" className="btn-ghost" style={{ marginTop: pagos.length > 0 ? '0.5rem' : '0', fontSize: '0.8rem', padding: '0.35rem 0.75rem', gap: '0.35rem', display: 'flex', alignItems: 'center' }} onClick={() => setShowAddPago(true)}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                                 Agregar pago
                             </button>
@@ -412,7 +512,6 @@ function PagoRow({ pago, eventoId }: { pago: PagoProveedor; eventoId: string }) 
     async function handleToggleRealizado() {
         const newVal = !realizado
         setRealizado(newVal)
-
         let tc: number | null = tcSnapshot
         if (newVal && !tcSnapshot) {
             setFetchingTc(true)
@@ -420,7 +519,6 @@ function PagoRow({ pago, eventoId }: { pago: PagoProveedor; eventoId: string }) 
             setFetchingTc(false)
             setTcSnapshot(tc)
         }
-
         startTransition(async () => {
             await updatePago(pago.id, eventoId, {
                 realizado: newVal,
@@ -439,119 +537,31 @@ function PagoRow({ pago, eventoId }: { pago: PagoProveedor; eventoId: string }) 
 
     return (
         <div
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.55rem 0.75rem',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: realizado ? 'rgba(46,125,50,0.04)' : 'var(--color-white)',
-                border: '1px solid',
-                borderColor: realizado ? 'rgba(46,125,50,0.18)' : 'var(--color-border)',
-                transition: 'border-color 0.2s, background-color 0.2s',
-                position: 'relative',
-            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.55rem 0.75rem', borderRadius: 'var(--radius-sm)', backgroundColor: realizado ? 'rgba(46,125,50,0.04)' : 'var(--color-white)', border: '1px solid', borderColor: realizado ? 'rgba(46,125,50,0.18)' : 'var(--color-border)', transition: 'border-color 0.2s, background-color 0.2s' }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => { setIsHovered(false); setConfirmDelete(false) }}
         >
-            {/* Monto */}
-            <input
-                type="number"
-                min="0"
-                step="100"
-                value={monto}
-                onChange={e => setMonto(e.target.value)}
-                onBlur={() => saveField({ monto: parseFloat(monto) || 0 })}
-                className="form-input"
-                style={{ width: '110px', fontSize: '0.85rem' }}
-                placeholder="0"
-                title="Monto"
-            />
-            {/* Moneda */}
-            <select
-                value={moneda}
-                onChange={e => { setMoneda(e.target.value); saveField({ moneda: e.target.value as 'USD' | 'ARS' }) }}
-                className="form-input"
-                style={{ width: '72px', fontSize: '0.85rem' }}
-                title="Moneda"
-            >
+            <input type="number" min="0" step="100" value={monto} onChange={e => setMonto(e.target.value)} onBlur={() => saveField({ monto: parseFloat(monto) || 0 })} className="form-input" style={{ width: '110px', fontSize: '0.85rem' }} placeholder="0" title="Monto" />
+            <select value={moneda} onChange={e => { setMoneda(e.target.value); saveField({ moneda: e.target.value as 'USD' | 'ARS' }) }} className="form-input" style={{ width: '72px', fontSize: '0.85rem' }} title="Moneda">
                 <option value="USD">USD</option>
                 <option value="ARS">ARS</option>
             </select>
-            {/* Fecha */}
-            <input
-                type="date"
-                value={fecha}
-                onChange={e => setFecha(e.target.value)}
-                onBlur={() => fecha && saveField({ fecha })}
-                className="form-input"
-                style={{ flex: 1, minWidth: '130px', fontSize: '0.85rem' }}
-                title="Fecha del pago"
-            />
-            {/* Descripción */}
-            <input
-                value={descripcion}
-                onChange={e => setDescripcion(e.target.value)}
-                onBlur={() => saveField({ descripcion: descripcion || null })}
-                className="form-input"
-                style={{ flex: 2, fontSize: '0.85rem' }}
-                placeholder="Descripción…"
-                title="Descripción"
-            />
-            {/* TC snapshot (when realizado) */}
+            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} onBlur={() => fecha && saveField({ fecha })} className="form-input" style={{ flex: 1, minWidth: '130px', fontSize: '0.85rem' }} title="Fecha del pago" />
+            <input value={descripcion} onChange={e => setDescripcion(e.target.value)} onBlur={() => saveField({ descripcion: descripcion || null })} className="form-input" style={{ flex: 2, fontSize: '0.85rem' }} placeholder="Descripción…" title="Descripción" />
             {realizado && tcSnapshot && (
-                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
-                    TC {fmt(tcSnapshot)}
-                </span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', fontStyle: 'italic' }}>TC {fmt(tcSnapshot)}</span>
             )}
-            {/* Realizado toggle */}
-            <button
-                type="button"
-                onClick={handleToggleRealizado}
-                disabled={isPending || fetchingTc}
-                title={realizado ? 'Marcar como pendiente' : 'Marcar como realizado (guarda tipo de cambio blue)'}
-                style={{
-                    fontSize: '0.72rem',
-                    fontWeight: 600,
-                    padding: '0.28rem 0.7rem',
-                    borderRadius: '20px',
-                    border: '1px solid',
-                    cursor: isPending || fetchingTc ? 'wait' : 'pointer',
-                    fontFamily: 'var(--font-sans)',
-                    whiteSpace: 'nowrap',
-                    transition: 'all 0.2s',
-                    background: realizado ? 'rgba(46,125,50,0.1)' : 'transparent',
-                    color: realizado ? '#2E7D32' : 'var(--color-text-muted)',
-                    borderColor: realizado ? 'rgba(46,125,50,0.35)' : 'var(--color-border)',
-                    flexShrink: 0,
-                }}
-            >
+            <button type="button" onClick={handleToggleRealizado} disabled={isPending || fetchingTc} title={realizado ? 'Marcar como pendiente' : 'Marcar como realizado (guarda TC blue)'}
+                style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.28rem 0.7rem', borderRadius: '20px', border: '1px solid', cursor: isPending || fetchingTc ? 'wait' : 'pointer', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap', transition: 'all 0.2s', background: realizado ? 'rgba(46,125,50,0.1)' : 'transparent', color: realizado ? '#2E7D32' : 'var(--color-text-muted)', borderColor: realizado ? 'rgba(46,125,50,0.35)' : 'var(--color-border)', flexShrink: 0 }}>
                 {fetchingTc ? 'Obteniendo TC…' : realizado ? '✓ Realizado' : 'Pendiente'}
             </button>
-            {/* Delete — visible on hover */}
             {confirmDelete ? (
                 <span style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', flexShrink: 0 }}>
                     <button onClick={handleDelete} disabled={isPending} style={st.confirmYesSmall}>Eliminar</button>
                     <button onClick={() => setConfirmDelete(false)} style={st.confirmNoSmall}>No</button>
                 </span>
             ) : (
-                <button
-                    type="button"
-                    onClick={() => setConfirmDelete(true)}
-                    style={{
-                        opacity: isHovered ? 1 : 0,
-                        transition: 'opacity 0.15s',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: '0.2rem',
-                        color: 'var(--color-error)',
-                        flexShrink: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                    }}
-                    title="Eliminar pago"
-                >
+                <button type="button" onClick={() => setConfirmDelete(true)} style={{ opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s', background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'var(--color-error)', flexShrink: 0, display: 'flex', alignItems: 'center' }} title="Eliminar pago">
                     <TrashIcon />
                 </button>
             )}
@@ -573,12 +583,7 @@ function AddPagoForm({ rubroId, eventoId, onDone }: { rubroId: string; eventoId:
         const montoNum = parseFloat(monto)
         if (!montoNum || !fecha) return
         startTransition(async () => {
-            await createPago(rubroId, eventoId, {
-                monto: montoNum,
-                moneda,
-                fecha,
-                descripcion: descripcion || null,
-            })
+            await createPago(rubroId, eventoId, { monto: montoNum, moneda, fecha, descripcion: descripcion || null })
             onDone()
         })
     }
@@ -605,12 +610,8 @@ function AddPagoForm({ rubroId, eventoId, onDone }: { rubroId: string; eventoId:
                 <input value={descripcion} onChange={e => setDescripcion(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} className="form-input" placeholder="Ej: Seña, Saldo…" />
             </div>
             <div style={{ display: 'flex', gap: '0.4rem', paddingBottom: '1px' }}>
-                <button onClick={handleSubmit} disabled={isPending || !monto || !fecha} className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.48rem 0.9rem' }}>
-                    {isPending ? 'Agregando…' : 'Agregar'}
-                </button>
-                <button onClick={onDone} className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.48rem 0.75rem' }}>
-                    Cancelar
-                </button>
+                <button onClick={handleSubmit} disabled={isPending || !monto || !fecha} className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.48rem 0.9rem' }}>{isPending ? 'Agregando…' : 'Agregar'}</button>
+                <button onClick={onDone} className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.48rem 0.75rem' }}>Cancelar</button>
             </div>
         </div>
     )
@@ -624,10 +625,7 @@ function AddRubroForm({ eventoId, onDone }: { eventoId: string; onDone: () => vo
 
     function handleSubmit() {
         if (!nombre.trim()) return
-        startTransition(async () => {
-            await createRubro(eventoId, nombre.trim())
-            onDone()
-        })
+        startTransition(async () => { await createRubro(eventoId, nombre.trim()); onDone() })
     }
 
     return (
@@ -638,9 +636,7 @@ function AddRubroForm({ eventoId, onDone }: { eventoId: string; onDone: () => vo
                     <label className="form-label">Nombre del rubro</label>
                     <input autoFocus value={nombre} onChange={e => setNombre(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }} className="form-input" placeholder="DJ · Fotografía · Catering…" />
                 </div>
-                <button onClick={handleSubmit} disabled={isPending || !nombre.trim()} className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.55rem 1.1rem' }}>
-                    {isPending ? 'Creando…' : 'Crear rubro'}
-                </button>
+                <button onClick={handleSubmit} disabled={isPending || !nombre.trim()} className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.55rem 1.1rem' }}>{isPending ? 'Creando…' : 'Crear rubro'}</button>
                 <button onClick={onDone} className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.55rem 0.9rem' }}>Cancelar</button>
             </div>
         </div>
@@ -663,12 +659,7 @@ function TrashIcon() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st: Record<string, React.CSSProperties> = {
-    tipoCambioCard: { padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' },
-    tipoCambioLabel: { fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)' },
-    tipoCambioRow: { display: 'flex', alignItems: 'center', gap: '0.5rem' },
     summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' },
-    budgetBar: { height: '8px', backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden' },
-    budgetFill: { height: '100%', borderRadius: '99px', transition: 'width 0.3s ease' },
     rubroCard: { border: '1px solid', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-white)', overflow: 'hidden', transition: 'border-color 0.2s' },
     rubroRowBtn: { display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 0.85rem', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' },
     estadoBadge: { fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap' },

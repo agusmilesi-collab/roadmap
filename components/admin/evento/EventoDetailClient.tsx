@@ -330,6 +330,7 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                     eventoId={evento.id}
                     presupuestoUsd={evento.presupuesto_usd}
                     tipoCambioInicial={evento.tipo_cambio}
+                    fechaEvento={evento.fecha_evento}
                 />
             )}
         </div>
