@@ -250,10 +250,14 @@ function RubroReadCard({ rubro, rubroColor, tc, isExpanded, onToggle }: {
     const costoNum = rubro.costo_total ?? rubro.monto_original ?? 0
     const costoUSD = toUSD(costoNum, rubro.moneda, rubro.tipo_cambio_propio)
     const pagos = rubro.pagos_proveedor
-
-    const totalPagadoUSD = pagos.reduce((s, p) => s + toUSD(p.monto, p.moneda, p.tipo_cambio_snapshot), 0)
-    const saldoUSD = costoUSD - totalPagadoUSD
     const pagosRealizados = pagos.filter(p => p.realizado).length
+    const pagosPendientes = pagos.length - pagosRealizados
+
+    const realizadosUSD = pagos.filter(p => p.realizado).reduce((s, p) => s + toUSD(p.monto, p.moneda, p.tipo_cambio_snapshot), 0)
+    const todosUSD = pagos.reduce((s, p) => s + toUSD(p.monto, p.moneda, p.tipo_cambio_snapshot), 0)
+    const saldoAPagarUSD = costoUSD - realizadosUSD
+    const proyectadoUSD = costoUSD - todosUSD
+    const estaSaldado = saldoAPagarUSD <= 0 && pagosPendientes === 0
 
     return (
         <div style={{ border: '1px solid', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-white)', overflow: 'hidden', transition: 'border-color 0.2s', borderColor: isExpanded ? 'var(--color-gold)' : 'var(--color-border)' }}>
@@ -262,31 +266,42 @@ function RubroReadCard({ rubro, rubroColor, tc, isExpanded, onToggle }: {
                 onClick={onToggle}
                 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 0.85rem', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
             >
-                <span style={{ width: 3, height: 16, borderRadius: '99px', backgroundColor: rubroColor, flexShrink: 0 }} />
-                <span style={{ flex: 2, fontWeight: 500, fontSize: '0.88rem', color: 'var(--color-text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {rubro.nombre}
-                </span>
-                <span style={{ fontSize: '0.67rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap', ...ESTADO_STYLES[rubro.estado] }}>
+                {/* Left: color bar + nombre + proveedor */}
+                <span style={{ width: 3, alignSelf: 'stretch', borderRadius: '99px', backgroundColor: rubroColor, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.1rem', textAlign: 'left' }}>
+                    <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {rubro.nombre}
+                    </span>
+                    {rubro.proveedor && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {rubro.proveedor}
+                        </span>
+                    )}
+                </div>
+                {/* Right: estado | costo | saldo | pagos | chevron */}
+                <span style={{ fontSize: '0.67rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0, ...ESTADO_STYLES[rubro.estado] }}>
                     {ESTADO_LABELS[rubro.estado] ?? rubro.estado}
                 </span>
-                <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', minWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {rubro.proveedor || '—'}
-                </span>
-                <span style={{ fontSize: '0.82rem', fontWeight: 500, whiteSpace: 'nowrap', minWidth: '100px', textAlign: 'right' }}>
-                    {costoNum > 0 ? `${fmt(costoNum)} ${rubro.moneda}` : '—'}
-                </span>
+                {costoNum > 0 && (
+                    <span style={{ fontSize: '0.82rem', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                        {rubro.moneda} {fmt(costoNum)}
+                    </span>
+                )}
+                {costoUSD > 0 && (
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, whiteSpace: 'nowrap', color: saldoAPagarUSD <= 0 ? '#2E7D32' : '#D97706' }}>
+                        {estaSaldado ? '✓ Saldado' : `Saldo: USD ${fmt(Math.max(0, saldoAPagarUSD), 0)}`}
+                    </span>
+                )}
                 {pagos.length > 0 ? (
-                    <span style={{ fontSize: '0.75rem', minWidth: '80px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                         <span style={{ color: '#2E7D32', fontWeight: 500 }}>{pagosRealizados} ✓</span>
-                        {pagos.length - pagosRealizados > 0 && (
-                            <span style={{ color: 'var(--color-text-muted)' }}> · {pagos.length - pagosRealizados} pend.</span>
-                        )}
+                        {pagosPendientes > 0 && <span style={{ color: 'var(--color-text-muted)' }}> · {pagosPendientes} pend.</span>}
                     </span>
                 ) : (
-                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', minWidth: '80px', textAlign: 'right' }}>Sin pagos</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Sin pagos</span>
                 )}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                    style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, color: 'var(--color-text-muted)', marginLeft: '0.25rem' }}>
+                    style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, color: 'var(--color-text-muted)' }}>
                     <polyline points="6 9 12 15 18 9" />
                 </svg>
             </button>
@@ -358,17 +373,26 @@ function RubroReadCard({ rubro, rubroColor, tc, isExpanded, onToggle }: {
 
                             {/* Balance summary */}
                             {costoUSD > 0 && (
-                                <div style={{ marginTop: '0.6rem', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-white)', border: '1px solid var(--color-border)', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                                <div style={{ marginTop: '0.6rem', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-white)', border: '1px solid var(--color-border)', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                                     <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                                        Total pagado: <strong style={{ color: 'var(--color-text)' }}>USD {fmt(totalPagadoUSD, 0)}</strong>
+                                        Total pagado: <strong style={{ color: 'var(--color-text)' }}>USD {fmt(realizadosUSD, 0)}</strong>
                                     </span>
                                     <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                                        Saldo pendiente:{' '}
-                                        <strong style={{ color: saldoUSD <= 0 ? '#2E7D32' : '#D97706' }}>
-                                            USD {fmt(Math.max(0, saldoUSD), 0)}
+                                        Saldo a pagar:{' '}
+                                        <strong style={{ color: saldoAPagarUSD <= 0 ? '#2E7D32' : '#D97706' }}>
+                                            USD {fmt(Math.max(0, saldoAPagarUSD), 0)}
                                         </strong>
-                                        {saldoUSD <= 0 && <span style={{ fontSize: '0.72rem', color: '#2E7D32', marginLeft: '0.35rem' }}>✓ Saldado</span>}
+                                        {estaSaldado && <span style={{ fontSize: '0.72rem', color: '#2E7D32', marginLeft: '0.35rem' }}>✓ Saldado</span>}
                                     </span>
+                                    {Math.abs(proyectadoUSD) > 0.5 && (
+                                        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                            Proyectado:{' '}
+                                            <strong style={{ color: proyectadoUSD <= 0 ? '#2E7D32' : 'var(--color-text-muted)' }}>
+                                                USD {fmt(Math.max(0, proyectadoUSD), 0)}
+                                            </strong>
+                                            {proyectadoUSD <= 0 && ' ✓'}
+                                        </span>
+                                    )}
                                 </div>
                             )}
                         </div>
