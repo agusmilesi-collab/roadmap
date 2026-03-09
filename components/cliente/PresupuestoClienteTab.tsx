@@ -143,9 +143,9 @@ export function PresupuestoClienteTab({ rubros, presupuestoUsd, tipoCambioInicia
                                     fontFamily: 'var(--font-sans)',
                                     fontWeight: 600,
                                     fontSize: '0.78rem',
-                                    background: (cur === 'ARS') === showARS ? 'var(--color-gold)' : 'transparent',
+                                    backgroundColor: (cur === 'ARS') === showARS ? 'var(--color-gold)' : 'transparent',
                                     color: (cur === 'ARS') === showARS ? 'white' : 'var(--color-text-muted)',
-                                    transition: 'background 0.15s, color 0.15s',
+                                    transition: 'background-color 0.15s, color 0.15s',
                                 }}
                             >{cur}</button>
                         ))}
@@ -300,7 +300,7 @@ function RubroReadCard({ rubro, rubroColor, tc, showARS, isExpanded, onToggle }:
             {/* Collapsed row */}
             <button
                 onClick={onToggle}
-                style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 0.85rem', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 0.85rem', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
             >
                 {/* Left: color bar + nombre + proveedor */}
                 <span style={{ width: 3, alignSelf: 'stretch', borderRadius: '99px', backgroundColor: rubroColor, flexShrink: 0 }} />

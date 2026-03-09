@@ -330,7 +330,7 @@ const st: Record<string, React.CSSProperties> = {
         flex: 1,
         padding: '0.55rem 1rem',
         border: 'none',
-        background: 'transparent',
+        backgroundColor: 'transparent',
         borderRadius: 'calc(var(--radius-md) - 3px)',
         fontFamily: 'var(--font-sans)',
         fontSize: '0.875rem',
