@@ -25,8 +25,6 @@ const CashflowBarChart = dynamic<CashflowBarChartProps>(
 
 const ESTADO_OPTIONS = [
     { value: 'pendiente', label: 'Pendiente' },
-    { value: 'en_proceso', label: 'En proceso' },
-    { value: 'decidido', label: 'Decidido' },
     { value: 'señado', label: 'Señado' },
     { value: 'completado', label: 'Completado' },
 ]
@@ -303,8 +301,6 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
     const [tcPropio, setTcPropio] = useState(String(rubro.tipo_cambio_propio ?? ''))
     const [senaPct, setSenaPct] = useState(String(rubro.sena_pct ?? ''))
     const [fechaDecision, setFechaDecision] = useState(rubro.fecha_decision ?? '')
-    const [fechaSena, setFechaSena] = useState(rubro.fecha_sena ?? '')
-    const [notas, setNotas] = useState(rubro.notas ?? '')
 
     const tcEfectivo = (parseFloat(tcPropio) > 0) ? parseFloat(tcPropio) : tipoCambio
     const costoNum = parseFloat(costoTotal) || 0
@@ -314,11 +310,23 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
     const pagosRealizados = pagos.filter(p => p.realizado).length
     const pagosPendientes = pagos.length - pagosRealizados
 
+    // Real-time pago montos for balance calculation
+    const [pagosMontos, setPagosMontos] = useState<Map<string, { monto: number; moneda: string }>>(
+        () => new Map(pagos.map(p => [p.id, { monto: p.monto, moneda: p.moneda }]))
+    )
+    function handlePagoMontoChange(id: string, monto: number, pagoMoneda: string) {
+        setPagosMontos(prev => new Map(prev).set(id, { monto, moneda: pagoMoneda }))
+    }
+    const totalPagadoUSD = Array.from(pagosMontos.values()).reduce((sum, p) => {
+        return sum + (p.moneda === 'USD' ? p.monto : p.monto / (tcEfectivo > 0 ? tcEfectivo : 1))
+    }, 0)
+    const saldoUSD = costoUSD - totalPagadoUSD
+
     function handleSave() {
         startTransition(async () => {
             await updateRubro(rubro.id, eventoId, {
                 nombre,
-                estado: estado as 'pendiente' | 'en_proceso' | 'decidido' | 'señado' | 'completado',
+                estado: estado as 'pendiente' | 'señado' | 'completado',
                 proveedor: proveedor || null,
                 costo_total: parseFloat(costoTotal) || null,
                 monto_original: parseFloat(costoTotal) || null,
@@ -326,8 +334,6 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
                 tipo_cambio_propio: parseFloat(tcPropio) > 0 ? parseFloat(tcPropio) : null,
                 sena_pct: parseFloat(senaPct) || null,
                 fecha_decision: fechaDecision || null,
-                fecha_sena: fechaSena || null,
-                notas: notas || null,
                 descripcion_servicio: descripcionServicio || null,
             })
             onToggle()
@@ -427,16 +433,8 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
                             <input type="number" min="0" max="100" step="5" value={senaPct} onChange={e => setSenaPct(e.target.value)} className="form-input" placeholder="30" />
                         </div>
                         <div className="form-group">
-                            <label className="form-label">Fecha decisión</label>
+                            <label className="form-label">Fecha aprobación</label>
                             <input type="date" value={fechaDecision} onChange={e => setFechaDecision(e.target.value)} className="form-input" />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Fecha seña</label>
-                            <input type="date" value={fechaSena} onChange={e => setFechaSena(e.target.value)} className="form-input" />
-                        </div>
-                        <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                            <label className="form-label">Notas</label>
-                            <textarea value={notas} onChange={e => setNotas(e.target.value)} className="form-input" rows={2} style={{ resize: 'vertical', fontFamily: 'var(--font-sans)', fontSize: '0.88rem' }} placeholder="Notas adicionales…" />
                         </div>
                     </div>
 
@@ -456,9 +454,30 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
                         )}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                             {pagos.map(pago => (
-                                <PagoRow key={pago.id} pago={pago} eventoId={eventoId} />
+                                <PagoRow
+                                    key={pago.id}
+                                    pago={pago}
+                                    eventoId={eventoId}
+                                    onMontoChange={handlePagoMontoChange}
+                                />
                             ))}
                         </div>
+
+                        {/* Balance summary */}
+                        {pagos.length > 0 && costoUSD > 0 && (
+                            <div style={{ marginTop: '0.6rem', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-cream)', border: '1px solid var(--color-border)', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                                    Total pagado: <strong style={{ color: 'var(--color-text)' }}>USD {fmt(totalPagadoUSD, 0)}</strong>
+                                </span>
+                                <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                                    Saldo pendiente:{' '}
+                                    <strong style={{ color: saldoUSD <= 0 ? '#2E7D32' : '#D97706' }}>
+                                        USD {fmt(Math.max(0, saldoUSD), 0)}
+                                    </strong>
+                                    {saldoUSD <= 0 && <span style={{ fontSize: '0.72rem', color: '#2E7D32', marginLeft: '0.35rem' }}>✓ Saldado</span>}
+                                </span>
+                            </div>
+                        )}
                         {showAddPago ? (
                             <AddPagoForm rubroId={rubro.id} eventoId={eventoId} onDone={() => setShowAddPago(false)} />
                         ) : (
@@ -497,7 +516,11 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
 
 // ─── PagoRow ──────────────────────────────────────────────────────────────────
 
-function PagoRow({ pago, eventoId }: { pago: PagoProveedor; eventoId: string }) {
+function PagoRow({ pago, eventoId, onMontoChange }: {
+    pago: PagoProveedor
+    eventoId: string
+    onMontoChange?: (id: string, monto: number, moneda: string) => void
+}) {
     const [isPending, startTransition] = useTransition()
     const [realizado, setRealizado] = useState(pago.realizado)
     const [tcSnapshot, setTcSnapshot] = useState(pago.tipo_cambio_snapshot)
@@ -541,8 +564,8 @@ function PagoRow({ pago, eventoId }: { pago: PagoProveedor; eventoId: string }) 
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => { setIsHovered(false); setConfirmDelete(false) }}
         >
-            <input type="number" min="0" step="100" value={monto} onChange={e => setMonto(e.target.value)} onBlur={() => saveField({ monto: parseFloat(monto) || 0 })} className="form-input" style={{ width: '110px', fontSize: '0.85rem' }} placeholder="0" title="Monto" />
-            <select value={moneda} onChange={e => { setMoneda(e.target.value); saveField({ moneda: e.target.value as 'USD' | 'ARS' }) }} className="form-input" style={{ width: '72px', fontSize: '0.85rem' }} title="Moneda">
+            <input type="number" min="0" step="100" value={monto} onChange={e => { setMonto(e.target.value); onMontoChange?.(pago.id, parseFloat(e.target.value) || 0, moneda) }} onBlur={() => saveField({ monto: parseFloat(monto) || 0 })} className="form-input" style={{ width: '110px', fontSize: '0.85rem' }} placeholder="0" title="Monto" />
+            <select value={moneda} onChange={e => { setMoneda(e.target.value); saveField({ moneda: e.target.value as 'USD' | 'ARS' }); onMontoChange?.(pago.id, parseFloat(monto) || 0, e.target.value) }} className="form-input" style={{ width: '72px', fontSize: '0.85rem' }} title="Moneda">
                 <option value="USD">USD</option>
                 <option value="ARS">ARS</option>
             </select>
