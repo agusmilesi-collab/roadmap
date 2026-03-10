@@ -2,7 +2,7 @@
 
 import { createServerSupabaseClient } from '@/lib/supabase'
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? ''
+const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map((e) => e.trim()) ?? []
 
 export async function loginAction(
     email: string,
@@ -19,7 +19,7 @@ export async function loginAction(
     const user = data.user
 
     // If this user is a planner (not admin), auto-link their auth user_id to planners table
-    if (user.email !== ADMIN_EMAIL && user.email) {
+    if (user.email && !ADMIN_EMAILS.includes(user.email)) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: planner } = await (supabase as any)
             .from('planners')
@@ -37,7 +37,7 @@ export async function loginAction(
     }
 
     // Determine redirect
-    const redirectPath = user.email === ADMIN_EMAIL ? '/dashboard' : '/planner/dashboard'
+    const redirectPath = ADMIN_EMAILS.includes(user.email ?? '') ? '/dashboard' : '/planner/dashboard'
     return { redirect: redirectPath }
 }
 

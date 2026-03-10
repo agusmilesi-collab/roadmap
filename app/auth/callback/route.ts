@@ -1,7 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? ''
+const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map((e) => e.trim()) ?? []
 
 export async function GET(request: Request) {
     const { searchParams, origin } = new URL(request.url)
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
             const user = data.user
 
             // Auto-link planner if needed (same logic as email/password login)
-            if (user.email && user.email !== ADMIN_EMAIL) {
+            if (user.email && !ADMIN_EMAILS.includes(user.email)) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const { data: planner } = await (supabase as any)
                     .from('planners')
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
                 }
             }
 
-            const destination = user.email === ADMIN_EMAIL ? '/dashboard' : '/planner/dashboard'
+            const destination = ADMIN_EMAILS.includes(user.email ?? '') ? '/dashboard' : '/planner/dashboard'
             return NextResponse.redirect(`${origin}${destination}`)
         }
     }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase'
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? ''
+const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map((e) => e.trim()) ?? []
 
 // Paths that require ADMIN role
 const ADMIN_PREFIXES = ['/dashboard', '/eventos', '/planners', '/plantillas']
@@ -21,7 +21,7 @@ export async function proxy(request: NextRequest) {
     const isPlannerPath = PLANNER_PREFIXES.some((p) => pathname.startsWith(p))
     const isLoginPage = pathname === '/login'
 
-    const isAdmin = !!user && user.email === ADMIN_EMAIL
+    const isAdmin = !!user && ADMIN_EMAILS.includes(user.email ?? '')
     const isAuthenticated = !!user
 
     // ── Not authenticated ──────────────────────────────────────────────────────
