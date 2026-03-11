@@ -609,7 +609,7 @@ const styles: Record<string, React.CSSProperties> = {
     faseMeta: { display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0 },
     faseCounter: { fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', background: 'var(--color-cream-dark)', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap' },
     tareasList: { display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.75rem' },
-    tareaRow: { border: '1px solid', borderRadius: 'var(--radius-sm)', overflow: 'hidden', backgroundColor: 'var(--color-white)', transition: 'border-color 0.2s', display: 'flex', alignItems: 'stretch' },
+    tareaRow: { borderWidth: '1px', borderStyle: 'solid', borderRadius: 'var(--radius-sm)', overflow: 'hidden', backgroundColor: 'var(--color-white)', transition: 'border-color 0.2s', display: 'flex', alignItems: 'stretch' },
     tareaRowBtn: { display: 'flex', alignItems: 'center', gap: '0.6rem', flex: 1, padding: '0.65rem 0.85rem 0.65rem 0', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' },
     tareaIcon: { fontSize: '1rem', flexShrink: 0 },
     tareaNombre: { fontSize: '0.88rem', fontWeight: 500, color: 'var(--color-text)', flex: 1 },

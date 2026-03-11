@@ -88,13 +88,23 @@ export default async function EventoDetailPage({ params }: Props) {
         tareas: [...(f.tareas ?? [])].sort((a, b) => a.orden - b.orden),
     }))
 
+    function rubroStatusGroup(r: { estado: string; proveedor: string | null }): number {
+        if (r.estado === 'completado') return 0
+        if (r.estado === 'señado') return 1
+        if (r.proveedor) return 2
+        return 3
+    }
+
     const seenRubros = new Set<string>()
     const rubrosSorted = [...(evento.rubros ?? [])]
         .sort((a, b) => {
-            // orden = 0 means never manually sorted → treat as Infinity, tiebreak alphabetically
+            // Manual order (orden > 0) takes precedence; orden = 0 = unsorted
             const ao = a.orden === 0 ? Infinity : a.orden
             const bo = b.orden === 0 ? Infinity : b.orden
             if (ao !== bo) return ao < bo ? -1 : 1
+            // Same effective orden → sort by status group, then alphabetically
+            const ag = rubroStatusGroup(a), bg = rubroStatusGroup(b)
+            if (ag !== bg) return ag - bg
             return a.nombre.localeCompare(b.nombre, 'es')
         })
         .filter((r) => { if (seenRubros.has(r.id)) return false; seenRubros.add(r.id); return true })

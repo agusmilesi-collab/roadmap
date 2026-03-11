@@ -48,7 +48,11 @@ export default async function PlannerEventoPage({ params }: Props) {
       ),
       rubros (
         id, nombre, estado, proveedor, monto_original, moneda,
-        tipo_cambio_propio, sena_pct, fecha_decision, fecha_sena, notas, orden
+        tipo_cambio_propio, sena_pct, fecha_decision, fecha_sena, notas, orden,
+        costo_total, descripcion_servicio,
+        pagos_proveedor (
+          id, rubro_id, monto, moneda, tipo_cambio_snapshot, fecha, realizado, descripcion, created_at
+        )
       )
     `)
         .eq('id', id)
@@ -72,6 +76,12 @@ export default async function PlannerEventoPage({ params }: Props) {
             monto_original: number | null; moneda: string; tipo_cambio_propio: number | null
             sena_pct: number | null; fecha_decision: string | null; fecha_sena: string | null
             notas: string | null; orden: number
+            costo_total: number | null; descripcion_servicio: string | null
+            pagos_proveedor: {
+                id: string; rubro_id: string; monto: number; moneda: string
+                tipo_cambio_snapshot: number | null; fecha: string
+                realizado: boolean; descripcion: string | null; created_at: string
+            }[]
         }[]
     }
     const evento = eventoRaw as EventoRow | null
@@ -91,10 +101,27 @@ export default async function PlannerEventoPage({ params }: Props) {
         tareas: [...(f.tareas ?? [])].sort((a, b) => a.orden - b.orden),
     }))
 
+    function rubroStatusGroup(r: { estado: string; proveedor: string | null }): number {
+        if (r.estado === 'completado') return 0
+        if (r.estado === 'señado') return 1
+        if (r.proveedor) return 2
+        return 3
+    }
+
     const seenRubros = new Set<string>()
     const rubrosSorted = [...(evento.rubros ?? [])]
-        .sort((a, b) => a.orden - b.orden)
+        .sort((a, b) => {
+            const ag = rubroStatusGroup(a), bg = rubroStatusGroup(b)
+            if (ag !== bg) return ag - bg
+            return a.nombre.localeCompare(b.nombre, 'es')
+        })
         .filter((r) => { if (seenRubros.has(r.id)) return false; seenRubros.add(r.id); return true })
+        .map((r) => ({
+            ...r,
+            pagos_proveedor: [...(r.pagos_proveedor ?? [])].sort(
+                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            ),
+        }))
 
     const plannerInfo = evento.planners && !Array.isArray(evento.planners)
         ? (evento.planners as { nombre: string; email: string; telefono: string | null })

@@ -94,40 +94,76 @@ function buildTooltip(rubros: ChartRubro[], showARS: boolean) {
         label?: string
     }) {
         if (!active || !payload?.length) return null
-        const nonZero = payload.filter(p => (p.value ?? 0) > 0.01)
-        if (!nonZero.length) return null
         const currency = showARS ? 'ARS' : 'USD'
-        const total = nonZero.reduce((s, e) => s + (e.value ?? 0), 0)
+
+        // Group payload by rubro index → { pagado, aPagar }
+        const byRubro = new Map<number, { pagado: number; aPagar: number }>()
+        for (const entry of payload) {
+            const val = entry.value ?? 0
+            if (val < 0.01) continue
+            const parts = (entry.dataKey as string).split('_')
+            const idx = parseInt(parts[1])
+            const isReal = parts[2] === 'real'
+            const cur = byRubro.get(idx) ?? { pagado: 0, aPagar: 0 }
+            if (isReal) cur.pagado += val
+            else cur.aPagar += val
+            byRubro.set(idx, cur)
+        }
+        if (byRubro.size === 0) return null
+
+        let totalPagado = 0
+        let totalAPagar = 0
+        byRubro.forEach(({ pagado, aPagar }) => {
+            totalPagado += pagado
+            totalAPagar += aPagar
+        })
 
         return (
             <div style={{
                 background: 'white', border: '1px solid #E5E0D8', borderRadius: '8px',
                 padding: '0.75rem 1rem', boxShadow: '0 4px 20px rgba(0,0,0,0.13)',
-                minWidth: '210px', maxWidth: '280px',
+                minWidth: '230px', maxWidth: '300px',
             }}>
-                <p style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#9CA3AF', margin: '0 0 0.5rem' }}>{label}</p>
-                {nonZero.map(entry => {
-                    const parts = (entry.dataKey as string).split('_')
-                    const idx = parseInt(parts[1])
-                    const isReal = parts[2] === 'real'
+                <p style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#9CA3AF', margin: '0 0 0.65rem' }}>{label}</p>
+                {Array.from(byRubro.entries()).map(([idx, { pagado, aPagar }]) => {
                     const rubro = rubros[idx]
                     const color = RUBRO_COLORS[idx % RUBRO_COLORS.length]
                     return (
-                        <div key={entry.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.3rem', fontSize: '0.81rem' }}>
-                            <span style={{ width: 9, height: 9, borderRadius: '50%', background: color, opacity: isReal ? 1 : 0.5, flexShrink: 0 }} />
-                            <span style={{ flex: 1, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {rubro?.nombre}{rubro?.proveedor ? ` · ${rubro.proveedor}` : ''}
-                            </span>
-                            <span style={{ fontWeight: 600, color: '#111', whiteSpace: 'nowrap' }}>{currency} {fmtFull(entry.value)}</span>
-                            <span style={{ fontSize: '0.67rem', color: isReal ? '#2E7D32' : '#9CA3AF', flexShrink: 0 }}>
-                                {isReal ? '✓' : '⏳'}
-                            </span>
+                        <div key={idx} style={{ marginBottom: '0.55rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.18rem' }}>
+                                <span style={{ width: 9, height: 9, borderRadius: '2px', background: color, flexShrink: 0 }} />
+                                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {rubro?.nombre ?? `Rubro ${idx + 1}`}
+                                </span>
+                            </div>
+                            {pagado > 0.01 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingLeft: '1.2rem', fontSize: '0.78rem' }}>
+                                    <span style={{ color: '#2E7D32' }}>✓ Pagado</span>
+                                    <span style={{ fontWeight: 600, color: '#2E7D32' }}>{currency} {fmtFull(pagado)}</span>
+                                </div>
+                            )}
+                            {aPagar > 0.01 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingLeft: '1.2rem', fontSize: '0.78rem' }}>
+                                    <span style={{ color: '#D97706' }}>⏳ A pagar</span>
+                                    <span style={{ fontWeight: 600, color: '#D97706' }}>{currency} {fmtFull(aPagar)}</span>
+                                </div>
+                            )}
                         </div>
                     )
                 })}
-                <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #F3EDE4', display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 700, color: '#374151' }}>
-                    <span>Total</span>
-                    <span>{currency} {fmtFull(total)}</span>
+                <div style={{ marginTop: '0.4rem', paddingTop: '0.5rem', borderTop: '1px solid #F3EDE4', display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.81rem', fontWeight: 700 }}>
+                    {totalPagado > 0.01 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#2E7D32' }}>
+                            <span>Total pagado</span>
+                            <span>{currency} {fmtFull(totalPagado)}</span>
+                        </div>
+                    )}
+                    {totalAPagar > 0.01 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#D97706' }}>
+                            <span>Total a pagar</span>
+                            <span>{currency} {fmtFull(totalAPagar)}</span>
+                        </div>
+                    )}
                 </div>
             </div>
         )

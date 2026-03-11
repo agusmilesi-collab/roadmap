@@ -123,6 +123,13 @@ export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioIni
         return sum + toUSD(base, r.moneda, r.tipo_cambio_propio)
     }, 0)
 
+    const pagadoUSD = rubros.reduce((sum, r) =>
+        sum + (r.pagos_proveedor ?? [])
+            .filter(p => p.realizado)
+            .reduce((s, p) => s + toUSD(p.monto, p.moneda, p.tipo_cambio_snapshot), 0)
+    , 0)
+
+    const aPagarFlowUSD = comprometidoUSD - pagadoUSD
     const totalUSD = presupuestoUsd ?? 0
     const disponibleUSD = totalUSD - comprometidoUSD
     const pctComprometido = totalUSD > 0 ? Math.min(100, Math.round((comprometidoUSD / totalUSD) * 100)) : 0
@@ -168,31 +175,22 @@ export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioIni
                     </div>
                 </div>
 
-                {/* Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
-                    <FinancialCard
-                        label="Presupuesto total"
-                        usdValue={totalUSD}
-                        arsValue={totalUSD * tc}
-                        showARS={showARS}
-                        color="var(--color-text)"
-                    />
-                    <FinancialCard
-                        label="Comprometido"
-                        usdValue={comprometidoUSD}
-                        arsValue={comprometidoUSD * tc}
-                        showARS={showARS}
-                        color={comprometidoUSD > totalUSD ? 'var(--color-error)' : 'var(--color-gold-dark)'}
-                        sub={`${pctComprometido}% del presupuesto`}
-                    />
-                    <FinancialCard
-                        label="Disponible"
-                        usdValue={Math.max(0, disponibleUSD)}
-                        arsValue={Math.max(0, disponibleUSD) * tc}
-                        showARS={showARS}
-                        color={disponibleUSD < 0 ? 'var(--color-error)' : 'var(--color-olive)'}
-                        sub={disponibleUSD < 0 ? '⚠ Presupuesto excedido' : undefined}
-                    />
+                {/* 2-card summary */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    {/* LEFT — Presupuesto */}
+                    <div style={{ padding: '1rem 1.1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                        <p style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-gold-dark)', margin: 0 }}>Presupuesto</p>
+                        <BudgetRow label="Total" usdValue={totalUSD} tc={tc} showARS={showARS} color="var(--color-text)" />
+                        <BudgetRow label="Comprometido" usdValue={comprometidoUSD} tc={tc} showARS={showARS} color={comprometidoUSD > totalUSD ? 'var(--color-error)' : 'var(--color-gold-dark)'} note={`${pctComprometido}% del total`} />
+                        <BudgetRow label="Disponible" usdValue={disponibleUSD} tc={tc} showARS={showARS} color={disponibleUSD < 0 ? 'var(--color-error)' : 'var(--color-olive)'} note={disponibleUSD < 0 ? '⚠ Excedido' : undefined} />
+                    </div>
+                    {/* RIGHT — Flujo de pagos */}
+                    <div style={{ padding: '1rem 1.1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                        <p style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-gold-dark)', margin: 0 }}>Flujo de pagos</p>
+                        <BudgetRow label="Comprometido" usdValue={comprometidoUSD} tc={tc} showARS={showARS} color="var(--color-text)" />
+                        <BudgetRow label="Pagado" usdValue={pagadoUSD} tc={tc} showARS={showARS} color="#2E7D32" />
+                        <BudgetRow label="A pagar" usdValue={aPagarFlowUSD} tc={tc} showARS={showARS} color={aPagarFlowUSD <= 0 ? '#2E7D32' : '#D97706'} />
+                    </div>
                 </div>
 
                 {/* Budget bar */}
@@ -307,6 +305,20 @@ const RUBRO_COLORS = [
 ]
 
 // ─── FinancialCard ────────────────────────────────────────────────────────────
+
+function BudgetRow({ label, usdValue, tc, showARS, color, note }: {
+    label: string; usdValue: number; tc: number; showARS: boolean; color?: string; note?: string
+}) {
+    const primary = showARS ? `ARS ${fmt(usdValue * tc)}` : `USD ${fmt(usdValue)}`
+    const secondary = showARS ? `USD ${fmt(usdValue)}` : `ARS ${fmt(usdValue * tc)}`
+    return (
+        <div>
+            <p style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', margin: '0 0 0.15rem' }}>{label}</p>
+            <p style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-serif)', color: color ?? 'var(--color-text)', margin: 0, lineHeight: 1.2 }}>{primary}</p>
+            <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', margin: '0.1rem 0 0' }}>{secondary}{note ? ` · ${note}` : ''}</p>
+        </div>
+    )
+}
 
 function FinancialCard({ label, usdValue, arsValue, showARS, color, sub }: {
     label: string
@@ -441,7 +453,10 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
             {...draggableProps}
             style={{
                 ...st.rubroCard,
-                borderColor: isDragging ? 'var(--color-gold)' : isExpanded ? 'var(--color-gold)' : 'var(--color-border)',
+                borderLeftWidth: '3px', borderLeftStyle: 'solid', borderLeftColor: rubroColor,
+                borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: isDragging || isExpanded ? 'var(--color-gold)' : '#E5E7EB',
+                borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: isDragging || isExpanded ? 'var(--color-gold)' : '#E5E7EB',
+                borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: isDragging || isExpanded ? 'var(--color-gold)' : '#E5E7EB',
                 boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.12)' : undefined,
                 ...draggableProps?.style,
             }}
@@ -464,9 +479,6 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
                     </svg>
                 </div>
             <button onClick={onToggle} style={{ ...st.rubroRowBtn, flex: 1, paddingLeft: '0.5rem' }}>
-                {/* Color bar */}
-                <span style={{ width: 3, alignSelf: 'stretch', borderRadius: '99px', backgroundColor: rubroColor, flexShrink: 0 }} />
-
                 {/* 3-row content */}
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.28rem', textAlign: 'left' }}>
                     {/* Row 1: nombre · costo */}
@@ -713,7 +725,7 @@ function PagoRow({ pago, eventoId, onMontoChange }: {
 
     return (
         <div
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.55rem 0.75rem', borderRadius: 'var(--radius-sm)', backgroundColor: realizado ? 'rgba(46,125,50,0.04)' : 'var(--color-white)', border: '1px solid', borderColor: realizado ? 'rgba(46,125,50,0.18)' : 'var(--color-border)', transition: 'border-color 0.2s, background-color 0.2s' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.55rem 0.75rem', borderRadius: 'var(--radius-sm)', backgroundColor: realizado ? 'rgba(46,125,50,0.04)' : 'var(--color-white)', borderWidth: '1px', borderStyle: 'solid', borderColor: realizado ? 'rgba(46,125,50,0.18)' : 'var(--color-border)', transition: 'border-color 0.2s, background-color 0.2s' }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => { setIsHovered(false); setConfirmDelete(false) }}
         >
@@ -728,7 +740,7 @@ function PagoRow({ pago, eventoId, onMontoChange }: {
                 <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', fontStyle: 'italic' }}>TC {fmt(tcSnapshot)}</span>
             )}
             <button type="button" onClick={handleToggleRealizado} disabled={isPending || fetchingTc} title={realizado ? 'Marcar como pendiente' : 'Marcar como realizado (guarda TC blue)'}
-                style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.28rem 0.7rem', borderRadius: '20px', border: '1px solid', cursor: isPending || fetchingTc ? 'wait' : 'pointer', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap', transition: 'all 0.2s', background: realizado ? 'rgba(46,125,50,0.1)' : 'transparent', color: realizado ? '#2E7D32' : 'var(--color-text-muted)', borderColor: realizado ? 'rgba(46,125,50,0.35)' : 'var(--color-border)', flexShrink: 0 }}>
+                style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.28rem 0.7rem', borderRadius: '20px', borderWidth: '1px', borderStyle: 'solid', cursor: isPending || fetchingTc ? 'wait' : 'pointer', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap', transition: 'all 0.2s', backgroundColor: realizado ? 'rgba(46,125,50,0.1)' : 'transparent', color: realizado ? '#2E7D32' : 'var(--color-text-muted)', borderColor: realizado ? 'rgba(46,125,50,0.35)' : 'var(--color-border)', flexShrink: 0 }}>
                 {fetchingTc ? 'Obteniendo TC…' : realizado ? '✓ Realizado' : 'Pendiente'}
             </button>
             {confirmDelete ? (
@@ -836,7 +848,7 @@ function TrashIcon() {
 
 const st: Record<string, React.CSSProperties> = {
     summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' },
-    rubroCard: { border: '1px solid', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-white)', overflow: 'hidden', transition: 'border-color 0.2s' },
+    rubroCard: { borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-white)', overflow: 'hidden', transition: 'border-color 0.2s, box-shadow 0.2s' },
     rubroRowBtn: { display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 0.85rem', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' },
     estadoBadge: { fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap' },
     rubroDetail: { padding: '1rem 1.1rem', backgroundColor: 'var(--color-cream)', borderTop: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' },

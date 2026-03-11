@@ -341,7 +341,7 @@ const styles: Record<string, React.CSSProperties> = {
     wrapper: { maxWidth: '980px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' },
     header: { padding: '1.75rem' },
     headerTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.25rem' },
-    tipoBadge: { display: 'inline-block', fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', padding: '0.2rem 0.55rem', borderRadius: '20px', border: '1px solid', marginBottom: '0.5rem' },
+    tipoBadge: { display: 'inline-block', fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', padding: '0.2rem 0.55rem', borderRadius: '20px', borderWidth: '1px', borderStyle: 'solid', marginBottom: '0.5rem' },
     nombre: { fontFamily: 'var(--font-serif)', fontSize: '1.75rem', fontWeight: 600, color: 'var(--color-text)', lineHeight: 1.2 },
     plannerRow: { display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: 'var(--color-text-muted)', marginTop: '0.4rem' },
     headerRight: { display: 'flex', gap: '1.5rem', flexShrink: 0, flexWrap: 'wrap' },
