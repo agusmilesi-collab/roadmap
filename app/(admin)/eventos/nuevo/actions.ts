@@ -41,6 +41,7 @@ export async function createEvento(formData: FormData) {
     }
 
     const eventoId = evento.id
+    const hoy = new Date()
 
     // ── 2. Fetch plantillas_fases for this tipo_evento ────────────────────────
     const { data: plantillasFases } = await db
@@ -91,7 +92,7 @@ export async function createEvento(formData: FormData) {
                     orden: pt.orden,
                     estado: 'pendiente' as const,
                     completada: false,
-                    fecha: calcularFechaDesde(fecha_evento, pt.meses_antes, 'dias'),
+                    fecha: calcularFechaDesde(fecha_evento, pt.meses_antes, 'dias', hoy),
                     resumen: null,
                 }))
                 await db.from('tareas').insert(tareas)
@@ -125,7 +126,7 @@ export async function createEvento(formData: FormData) {
             moneda: pr.moneda_default,
             sena_pct: pr.sena_pct_default,
             orden: pr.orden,
-            fecha_decision: calcularFechaDesde(fecha_evento, pr.dias_antes_decision ?? null, 'dias'),
+            fecha_decision: calcularFechaDesde(fecha_evento, pr.dias_antes_decision ?? null, 'dias', hoy),
             proveedor: null,
             monto_original: null,
             fecha_sena: null,
@@ -139,10 +140,15 @@ export async function createEvento(formData: FormData) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+function toDateOnly(d: Date): string {
+    return d.toISOString().split('T')[0]
+}
+
 function calcularFechaDesde(
     fechaEvento: string,
     cantidad: number | null,
-    unidad: 'dias' | 'meses' = 'meses'
+    unidad: 'dias' | 'meses' = 'meses',
+    hoy?: Date
 ): string | null {
     if (!cantidad) return null
     const d = new Date(fechaEvento)
@@ -151,5 +157,14 @@ function calcularFechaDesde(
     } else {
         d.setDate(d.getDate() - cantidad)
     }
-    return d.toISOString().split('T')[0]
+
+    // Clamp: fecha >= hoy, fecha <= fechaEvento
+    if (hoy) {
+        const minDate = new Date(hoy); minDate.setHours(0, 0, 0, 0)
+        const maxDate = new Date(fechaEvento + 'T12:00:00')
+        if (d < minDate) return toDateOnly(minDate)
+        if (d > maxDate) return toDateOnly(maxDate)
+    }
+
+    return toDateOnly(d)
 }
