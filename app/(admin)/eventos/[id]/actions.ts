@@ -277,7 +277,7 @@ export async function updateTipoCambio(eventoId: string, tipoCambio: number) {
 
 export async function updateEvento(
     eventoId: string,
-    data: Partial<{ nombre: string; planner_id: string | null; fecha_evento: string }>
+    data: Partial<{ nombre: string; planner_id: string | null; fecha_evento: string; presupuesto_usd: number | null; tipo_cambio: number | null }>
 ) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

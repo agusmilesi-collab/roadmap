@@ -164,13 +164,19 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
     const [editNombre, setEditNombre] = useState(evento.nombre)
     const [editPlannerId, setEditPlannerId] = useState(plannerId ?? '')
     const [editFecha, setEditFecha] = useState(evento.fecha_evento)
+    const [editPresupuesto, setEditPresupuesto] = useState<string>(evento.presupuesto_usd != null ? String(evento.presupuesto_usd) : '')
+    const [editTipoCambio, setEditTipoCambio] = useState<string>(evento.tipo_cambio != null ? String(evento.tipo_cambio) : '')
     const [isSavingHeader, startSavingHeader] = useTransition()
 
     function handleSaveHeader() {
         startSavingHeader(async () => {
+            const presupuesto = editPresupuesto.trim() !== '' ? parseFloat(editPresupuesto) : null
+            const tipoCambio = editTipoCambio.trim() !== '' ? parseFloat(editTipoCambio) : null
             await updateEvento(evento.id, {
                 nombre: editNombre.trim() || evento.nombre,
                 fecha_evento: editFecha || evento.fecha_evento,
+                presupuesto_usd: presupuesto,
+                tipo_cambio: tipoCambio,
                 ...(canChangePlanner ? { planner_id: editPlannerId || null } : {}),
             })
             setEditingHeader(false)
@@ -236,13 +242,37 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                                     </select>
                                 </div>
                             )}
+                            <div className="form-group" style={{ minWidth: '140px' }}>
+                                <label className="form-label">Presupuesto (USD)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="100"
+                                    value={editPresupuesto}
+                                    onChange={e => setEditPresupuesto(e.target.value)}
+                                    className="form-input"
+                                    placeholder="Sin definir"
+                                />
+                            </div>
+                            <div className="form-group" style={{ minWidth: '140px' }}>
+                                <label className="form-label">Tipo de cambio (ARS)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="10"
+                                    value={editTipoCambio}
+                                    onChange={e => setEditTipoCambio(e.target.value)}
+                                    className="form-input"
+                                    placeholder="Sin definir"
+                                />
+                            </div>
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <button onClick={handleSaveHeader} disabled={isSavingHeader} className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.45rem 1rem' }}>
                                 {isSavingHeader ? 'Guardando…' : 'Guardar'}
                             </button>
                             <button
-                                onClick={() => { setEditingHeader(false); setEditNombre(evento.nombre); setEditPlannerId(plannerId ?? ''); setEditFecha(evento.fecha_evento) }}
+                                onClick={() => { setEditingHeader(false); setEditNombre(evento.nombre); setEditPlannerId(plannerId ?? ''); setEditFecha(evento.fecha_evento); setEditPresupuesto(evento.presupuesto_usd != null ? String(evento.presupuesto_usd) : ''); setEditTipoCambio(evento.tipo_cambio != null ? String(evento.tipo_cambio) : '') }}
                                 className="btn-ghost"
                                 style={{ fontSize: '0.82rem', padding: '0.45rem 0.85rem' }}
                             >
