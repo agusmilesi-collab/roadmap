@@ -1,21 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import dynamic from 'next/dynamic'
-import type { CashflowBarChartProps } from '@/components/admin/evento/CashflowBarChart'
-import { RUBRO_COLORS } from '@/components/admin/evento/CashflowBarChart'
-
-const CashflowBarChart = dynamic<CashflowBarChartProps>(
-    () => import('@/components/admin/evento/CashflowBarChart').then(m => ({ default: m.CashflowBarChart })),
-    {
-        ssr: false,
-        loading: () => (
-            <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                Cargando gráfico…
-            </div>
-        ),
-    }
-)
+import { agruparRubros, type GrupoRubro } from '@/lib/presupuestoMetrics'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +14,9 @@ interface PagoCliente {
     realizado: boolean
     descripcion: string | null
     created_at: string
+    tipo?: 'cuota' | 'sena' | 'deposito_garantia'
+    devuelto?: boolean
+    fecha_devolucion?: string | null
 }
 
 interface RubroCliente {
@@ -82,7 +71,7 @@ async function fetchDolarBlue(): Promise<number | null> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function PresupuestoClienteTab({ rubros, presupuestoUsd, tipoCambioInicial, fechaEvento }: Props) {
+export function PresupuestoClienteTab({ rubros, presupuestoUsd, tipoCambioInicial }: Props) {
     const [tcBlue, setTcBlue] = useState<number>(tipoCambioInicial ?? 0)
     const [tcLoading, setTcLoading] = useState(true)
     const [showARS, setShowARS] = useState(false)
@@ -102,21 +91,11 @@ export function PresupuestoClienteTab({ rubros, presupuestoUsd, tipoCambioInicia
         return monto / (tcSnap && tcSnap > 0 ? tcSnap : tc)
     }
 
-    // Sort rubros by status group, then alphabetically
-    function rubroStatusGroup(r: { estado: string; proveedor: string | null }): number {
-        if (r.estado === 'completado') return 0
-        if (r.estado === 'señado') return 1
-        if (r.proveedor) return 2
-        return 3
-    }
-    const sortedRubros = [...rubros].sort((a, b) => {
-        const ag = rubroStatusGroup(a), bg = rubroStatusGroup(b)
-        if (ag !== bg) return ag - bg
-        return a.nombre.localeCompare(b.nombre, 'es')
-    })
+    const sortedRubros = [...rubros].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+    const grupos = agruparRubros(sortedRubros)
 
     // Budget calculations
-    const comprometidoUSD = rubros.reduce((sum, r) => {
+    const asignadoUSD = rubros.reduce((sum, r) => {
         const base = r.costo_total ?? r.monto_original
         if (!base) return sum
         return sum + toUSD(base, r.moneda, r.tipo_cambio_propio)
@@ -128,176 +107,162 @@ export function PresupuestoClienteTab({ rubros, presupuestoUsd, tipoCambioInicia
             .reduce((s, p) => s + toUSD(p.monto, p.moneda, p.tipo_cambio_snapshot), 0)
     , 0)
 
-    const aPagarFlowUSD = comprometidoUSD - pagadoUSD
+    const aPagarFlowUSD = Math.max(0, asignadoUSD - pagadoUSD)
     const totalUSD = presupuestoUsd ?? 0
-    const disponibleUSD = totalUSD - comprometidoUSD
-    const pct = totalUSD > 0 ? Math.min(100, Math.round((comprometidoUSD / totalUSD) * 100)) : 0
-    const hasPagos = rubros.some(r => r.pagos_proveedor.length > 0)
+    const pct = totalUSD > 0 ? Math.min(100, Math.round((asignadoUSD / totalUSD) * 100)) : 0
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
-            {/* ── BLOQUE 1: Resumen financiero ─────────────────────────────── */}
-            <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-                    <div>
-                        <p style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', margin: 0 }}>
-                            Resumen financiero
-                        </p>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '0.2rem 0 0', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: tcLoading ? '#D1D5DB' : '#22C55E' }} />
-                            TC blue: {tcLoading ? 'obteniendo…' : `$ ${fmt(tc)} ARS/USD`}
-                        </p>
-                    </div>
-                    {/* USD / ARS toggle */}
-                    <div style={{ display: 'flex', borderRadius: '20px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
-                        {(['USD', 'ARS'] as const).map(cur => (
-                            <button
-                                key={cur}
-                                type="button"
-                                onClick={() => setShowARS(cur === 'ARS')}
-                                style={{
-                                    padding: '0.28rem 0.9rem',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    fontFamily: 'var(--font-sans)',
-                                    fontWeight: 600,
-                                    fontSize: '0.78rem',
-                                    backgroundColor: (cur === 'ARS') === showARS ? 'var(--color-gold)' : 'transparent',
-                                    color: (cur === 'ARS') === showARS ? 'white' : 'var(--color-text-muted)',
-                                    transition: 'background-color 0.15s, color 0.15s',
-                                }}
-                            >{cur}</button>
-                        ))}
+            {/* ── Resumen del evento (estética Progreso) ─────────────────── */}
+            <div className="card" style={{ padding: '1.75rem 2rem 1.5rem' }}>
+                <div style={{ paddingBottom: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.7rem', fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-gold-dark)' }}>
+                                Presupuesto
+                            </div>
+                            <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '1.375rem', fontWeight: 600, margin: '0.25rem 0 0.4rem', color: 'var(--color-text)', letterSpacing: '-0.015em', lineHeight: 1.2 }}>
+                                Resumen del evento
+                            </h2>
+                            <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.55, display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: tcLoading ? '#D1D5DB' : '#22C55E', flexShrink: 0 }} />
+                                TC blue: <strong style={{ color: 'var(--color-text)' }}>{tcLoading ? 'obteniendo…' : `$ ${fmt(tc)} ARS/USD`}</strong>
+                                {' · '}{rubros.length} rubro{rubros.length === 1 ? '' : 's'}
+                            </p>
+                        </div>
+                        <div style={{ display: 'flex', borderRadius: 99, border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+                            {(['USD', 'ARS'] as const).map(cur => (
+                                <button
+                                    key={cur}
+                                    type="button"
+                                    onClick={() => setShowARS(cur === 'ARS')}
+                                    style={{
+                                        padding: '0.28rem 0.9rem',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        fontFamily: 'var(--font-sans)',
+                                        fontWeight: 600,
+                                        fontSize: '0.78rem',
+                                        backgroundColor: (cur === 'ARS') === showARS ? 'var(--color-gold)' : 'transparent',
+                                        color: (cur === 'ARS') === showARS ? 'white' : 'var(--color-text-muted)',
+                                    }}
+                                >{cur}</button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
-                {/* 2-card summary */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    {/* LEFT — Presupuesto */}
-                    <div style={{ padding: '1rem 1.1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                        <p style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-gold-dark)', margin: 0 }}>Presupuesto</p>
-                        <BudgetRow label="Total" usdValue={totalUSD} tc={tc} showARS={showARS} color="var(--color-text)" />
-                        <BudgetRow label="Comprometido" usdValue={comprometidoUSD} tc={tc} showARS={showARS} color={comprometidoUSD > totalUSD ? 'var(--color-error)' : 'var(--color-gold-dark)'} note={`${pct}% del total`} />
-                        <BudgetRow label="Disponible" usdValue={disponibleUSD} tc={tc} showARS={showARS} color={disponibleUSD < 0 ? 'var(--color-error)' : 'var(--color-olive)'} note={disponibleUSD < 0 ? '⚠ Excedido' : undefined} />
-                    </div>
-                    {/* RIGHT — Flujo de pagos */}
-                    <div style={{ padding: '1rem 1.1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                        <p style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-gold-dark)', margin: 0 }}>Flujo de pagos</p>
-                        <BudgetRow label="Comprometido" usdValue={comprometidoUSD} tc={tc} showARS={showARS} color="var(--color-text)" />
-                        <BudgetRow label="Pagado" usdValue={pagadoUSD} tc={tc} showARS={showARS} color="#2E7D32" />
-                        <BudgetRow label="A pagar" usdValue={aPagarFlowUSD} tc={tc} showARS={showARS} color={aPagarFlowUSD <= 0 ? '#2E7D32' : '#D97706'} />
-                    </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.65rem' }} className="kpi-grid-presupuesto">
+                    <KPI label="Total" usdValue={totalUSD} tc={tc} showARS={showARS} />
+                    <KPI label="Asignado" usdValue={asignadoUSD} tc={tc} showARS={showARS} variant="gold" secondary={`${pct}% del total`} />
+                    <KPI label="Pagado" usdValue={pagadoUSD} tc={tc} showARS={showARS} variant="green" />
+                    <KPI label="A pagar" usdValue={aPagarFlowUSD} tc={tc} showARS={showARS} variant="warn" />
                 </div>
 
                 {totalUSD > 0 && (
-                    <div style={{ height: '6px', backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', borderRadius: '99px', transition: 'width 0.4s ease', width: `${pct}%`, backgroundColor: comprometidoUSD > totalUSD ? 'var(--color-error)' : 'var(--color-gold)' }} />
-                    </div>
+                    <>
+                        <div style={{ marginTop: '1.25rem', height: 8, background: 'var(--color-cream-dark)', borderRadius: 99, overflow: 'hidden' }}>
+                            <div style={{
+                                height: '100%', borderRadius: 99, transition: 'width 0.5s ease',
+                                width: `${pct}%`,
+                                background: asignadoUSD > totalUSD ? 'var(--color-error)' : 'linear-gradient(90deg, var(--color-olive), var(--color-gold))',
+                            }} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.45rem', fontFamily: 'var(--font-mono, monospace)' }}>
+                            <span>USD 0</span>
+                            <span>{showARS ? `ARS ${fmt(asignadoUSD * tc)}` : `USD ${fmt(asignadoUSD)}`} asignado</span>
+                            <span>{showARS ? `ARS ${fmt(totalUSD * tc)}` : `USD ${fmt(totalUSD)}`} total</span>
+                        </div>
+                    </>
                 )}
             </div>
 
-            {/* ── BLOQUE 2: Cashflow ───────────────────────────────────────── */}
-            {hasPagos && (
-                <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-                        <p style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', margin: 0 }}>
-                            Cashflow de pagos
-                        </p>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
-                            {rubros.filter(r => r.pagos_proveedor.length > 0).map(r => {
-                                const idx = rubros.indexOf(r)
-                                return (
-                                    <span key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                                        <span style={{ width: 8, height: 8, borderRadius: '2px', backgroundColor: RUBRO_COLORS[idx % RUBRO_COLORS.length], flexShrink: 0 }} />
-                                        {r.nombre}
-                                    </span>
-                                )
-                            })}
-                        </div>
-                    </div>
-                    <CashflowBarChart rubros={rubros} fechaEvento={fechaEvento} tc={tc} showARS={showARS} />
-                    <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ width: 10, height: 10, borderRadius: '2px', backgroundColor: '#7C8B70', flexShrink: 0 }} />
-                            Sólido = realizado
-                        </span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ width: 10, height: 10, borderRadius: '2px', backgroundColor: '#7C8B70', opacity: 0.4, flexShrink: 0 }} />
-                            Transparente = pendiente
-                        </span>
-                    </div>
-                </div>
-            )}
-
-            {/* ── BLOQUE 3: Rubros ─────────────────────────────────────────── */}
+            {/* ── Rubros agrupados ───────────────────────────────────────── */}
             {rubros.length === 0 ? (
                 <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem', fontStyle: 'italic' }}>
                     No hay rubros definidos para este evento.
                 </div>
             ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {sortedRubros.map((rubro, idx) => (
-                        <RubroReadCard
-                            key={rubro.id}
-                            rubro={rubro}
-                            rubroColor={RUBRO_COLORS[idx % RUBRO_COLORS.length]}
-                            tc={tc}
-                            showARS={showARS}
-                            isExpanded={expandedId === rubro.id}
-                            onToggle={() => setExpandedId(expandedId === rubro.id ? null : rubro.id)}
-                        />
-                    ))}
-                </div>
+                <>
+                    {(['pendiente', 'señado', 'cerrado'] as const).map(g => {
+                        const rubrosGrupo = grupos[g]
+                        if (rubrosGrupo.length === 0) return null
+                        const titulos: Record<GrupoRubro, string> = {
+                            pendiente: 'Pendiente', señado: 'Señado', cerrado: 'Cerrado',
+                        }
+                        const hints: Record<GrupoRubro, string> = {
+                            pendiente: 'sin compromiso firme',
+                            señado: 'con compromiso firme',
+                            cerrado: 'saldado',
+                        }
+                        return (
+                            <div key={g}>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.55rem', padding: '0.5rem 0.25rem 0.6rem', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-muted)' }}>
+                                    {titulos[g]}
+                                    <span style={{ color: 'var(--color-text-faint)', fontWeight: 500, fontFamily: 'var(--font-mono, monospace)' }}>
+                                        · {rubrosGrupo.length} rubro{rubrosGrupo.length === 1 ? '' : 's'} {hints[g]}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    {rubrosGrupo.map(rubro => (
+                                        <RubroReadCard
+                                            key={rubro.id}
+                                            rubro={rubro}
+                                            tc={tc}
+                                            showARS={showARS}
+                                            isExpanded={expandedId === rubro.id}
+                                            onToggle={() => setExpandedId(expandedId === rubro.id ? null : rubro.id)}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )
+                    })}
+                </>
             )}
         </div>
     )
 }
 
-// ─── BudgetRow ────────────────────────────────────────────────────────────────
+// ─── KPI card ────────────────────────────────────────────────────────────────
 
-function BudgetRow({ label, usdValue, tc, showARS, color, note }: {
-    label: string; usdValue: number; tc: number; showARS: boolean; color?: string; note?: string
+function KPI({ label, usdValue, tc, showARS, secondary, variant }: {
+    label: string; usdValue: number; tc: number; showARS: boolean; secondary?: string
+    variant?: 'gold' | 'green' | 'warn'
 }) {
-    const primary = showARS ? `ARS ${fmt(usdValue * tc)}` : `USD ${fmt(usdValue)}`
-    const secondary = showARS ? `USD ${fmt(usdValue)}` : `ARS ${fmt(usdValue * tc)}`
+    const value = showARS ? `ARS ${fmt(usdValue * tc)}` : `USD ${fmt(usdValue)}`
+    const valueColor =
+        variant === 'gold' ? 'var(--color-gold-dark)' :
+        variant === 'green' ? '#2E7D32' :
+        variant === 'warn' ? '#D97706' :
+        'var(--color-text)'
     return (
-        <div>
-            <p style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', margin: '0 0 0.15rem' }}>{label}</p>
-            <p style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-serif)', color: color ?? 'var(--color-text)', margin: 0, lineHeight: 1.2 }}>{primary}</p>
-            <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', margin: '0.1rem 0 0' }}>{secondary}{note ? ` · ${note}` : ''}</p>
+        <div style={{
+            padding: '0.95rem 1rem',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-cream)',
+            border: '1px solid var(--color-border)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.18rem',
+        }}>
+            <span style={{ fontSize: '0.66rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-muted)' }}>
+                {label}
+            </span>
+            <span style={{ fontFamily: 'var(--font-serif)', fontSize: '1.35rem', fontWeight: 700, lineHeight: 1.15, color: valueColor }}>
+                {value}
+            </span>
+            {secondary && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{secondary}</span>}
         </div>
     )
 }
 
-// ─── FinancialCard ────────────────────────────────────────────────────────────
-
-function FinancialCard({ label, usdValue, arsValue, showARS, color, sub }: {
-    label: string; usdValue: number; arsValue: number; showARS: boolean; color: string; sub?: string
-}) {
-    const primary = showARS ? arsValue : usdValue
-    const secondary = showARS ? usdValue : arsValue
-    const primaryPrefix = showARS ? 'ARS' : 'USD'
-    const secondaryPrefix = showARS ? 'USD' : 'ARS'
-    return (
-        <div style={{ padding: '1.1rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-cream)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-            <span style={{ fontSize: '0.7rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)' }}>{label}</span>
-            <span style={{ fontSize: '1.1rem', fontWeight: 700, color, fontFamily: 'var(--font-serif)', lineHeight: 1.2 }}>
-                {primaryPrefix} {fmt(primary)}
-            </span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                {secondaryPrefix} {fmt(secondary)}
-            </span>
-            {sub && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>{sub}</span>}
-        </div>
-    )
-}
 
 // ─── RubroReadCard ────────────────────────────────────────────────────────────
 
-function RubroReadCard({ rubro, rubroColor, tc, showARS, isExpanded, onToggle }: {
+function RubroReadCard({ rubro, tc, showARS, isExpanded, onToggle }: {
     rubro: RubroCliente
-    rubroColor: string
     tc: number
     showARS: boolean
     isExpanded: boolean
@@ -313,7 +278,9 @@ function RubroReadCard({ rubro, rubroColor, tc, showARS, isExpanded, onToggle }:
 
     const costoNum = rubro.costo_total ?? rubro.monto_original ?? 0
     const costoUSD = toUSD(costoNum, rubro.moneda, rubro.tipo_cambio_propio)
-    const pagos = rubro.pagos_proveedor
+    const allPagos = rubro.pagos_proveedor
+    const pagos = allPagos.filter(p => p.tipo !== 'deposito_garantia')
+    const deposito = allPagos.find(p => p.tipo === 'deposito_garantia') ?? null
     const pagosRealizados = pagos.filter(p => p.realizado).length
     const pagosPendientes = pagos.length - pagosRealizados
 
@@ -325,11 +292,12 @@ function RubroReadCard({ rubro, rubroColor, tc, showARS, isExpanded, onToggle }:
 
     return (
         <div style={{
-            borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-white)', overflow: 'hidden', transition: 'border-color 0.2s',
-            borderLeftWidth: '3px', borderLeftStyle: 'solid', borderLeftColor: rubroColor,
-            borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: isExpanded ? 'var(--color-gold)' : '#E5E7EB',
-            borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: isExpanded ? 'var(--color-gold)' : '#E5E7EB',
-            borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: isExpanded ? 'var(--color-gold)' : '#E5E7EB',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'var(--color-white)',
+            overflow: 'hidden',
+            transition: 'border-color 0.2s',
+            border: '1px solid',
+            borderColor: isExpanded ? 'var(--color-gold)' : '#E5E7EB',
         }}>
             {/* Collapsed row */}
             <button
@@ -406,6 +374,37 @@ function RubroReadCard({ rubro, rubroColor, tc, showARS, isExpanded, onToggle }:
                                     </p>
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {/* Depósito en garantía (si existe) */}
+                    {deposito && (
+                        <div style={{
+                            background: 'rgba(46,125,50,0.04)',
+                            border: '1px dashed rgba(46,125,50,0.35)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '0.7rem 0.9rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.65rem',
+                            flexWrap: 'wrap',
+                        }}>
+                            <div style={{
+                                flexShrink: 0, width: 28, height: 28, borderRadius: '50%',
+                                background: 'rgba(46,125,50,0.15)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: '#2E7D32', fontSize: '0.95rem',
+                            }}>🔒</div>
+                            <div style={{ fontSize: '0.82rem', color: 'var(--color-text)', flex: 1, lineHeight: 1.45, minWidth: 0 }}>
+                                Depósito en garantía: <strong style={{ color: '#2E7D32' }}>{fmtAmt(toUSD(deposito.monto, deposito.moneda, deposito.tipo_cambio_snapshot))}</strong>
+                                <small style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', display: 'block', marginTop: '0.15rem' }}>
+                                    {deposito.devuelto
+                                        ? `✓ Devuelto el ${deposito.fecha_devolucion ?? ''}`
+                                        : deposito.realizado
+                                            ? 'Pagado · pendiente devolución al finalizar el evento'
+                                            : 'Aún sin pagar'}
+                                </small>
+                            </div>
                         </div>
                     )}
 

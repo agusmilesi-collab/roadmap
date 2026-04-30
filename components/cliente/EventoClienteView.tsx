@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { ProgresoClienteTab } from './ProgresoClienteTab'
 import { PresupuestoClienteTab } from './PresupuestoClienteTab'
+import { DashboardTab } from '@/components/admin/evento/DashboardTab'
+import { AcuerdosTab } from '@/components/admin/evento/AcuerdosTab'
 import { PlannerCard } from './PlannerCard'
 
 // ─── Types (exported so sub-components can import them) ───────────────────────
@@ -14,6 +16,8 @@ export interface EventoCliente {
     fecha_evento: string
     presupuesto_usd: number | null
     tipo_cambio: number | null
+    mostrar_dashboard_cliente: boolean
+    mostrar_acuerdos_cliente: boolean
     fases: {
         id: string
         nombre: string
@@ -110,7 +114,7 @@ function faseVencida(fase: EventoCliente['fases'][number]): boolean {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function EventoClienteView({ evento }: { evento: EventoCliente }) {
-    const [tab, setTab] = useState<'progreso' | 'presupuesto'>('progreso')
+    const [tab, setTab] = useState<'progreso' | 'presupuesto' | 'dashboard' | 'acuerdos'>('progreso')
 
     const dias = diasRestantes(evento.fecha_evento)
     const { total, completadas } = calcProgresoTotal(evento.fases)
@@ -216,11 +220,35 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                     >
                         💰 Presupuesto
                     </button>
+                    {evento.mostrar_dashboard_cliente && (
+                        <button
+                            onClick={() => setTab('dashboard')}
+                            style={{ ...st.tabBtn, ...(tab === 'dashboard' ? st.tabActive : {}) }}
+                        >
+                            📊 Dashboard
+                        </button>
+                    )}
+                    {evento.mostrar_acuerdos_cliente && (
+                        <button
+                            onClick={() => setTab('acuerdos')}
+                            style={{ ...st.tabBtn, ...(tab === 'acuerdos' ? st.tabActive : {}) }}
+                        >
+                            📝 Acuerdos
+                        </button>
+                    )}
                 </div>
 
                 <div style={st.content}>
                     {tab === 'progreso' && (
                         <ProgresoClienteTab fases={evento.fases} />
+                    )}
+                    {tab === 'dashboard' && evento.mostrar_dashboard_cliente && (
+                        <DashboardTab
+                            rubros={evento.rubros}
+                            presupuestoUsd={evento.presupuesto_usd}
+                            tipoCambioInicial={evento.tipo_cambio}
+                            fechaEvento={evento.fecha_evento}
+                        />
                     )}
                     {tab === 'presupuesto' && (
                         <PresupuestoClienteTab
@@ -229,6 +257,9 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                             tipoCambioInicial={evento.tipo_cambio}
                             fechaEvento={evento.fecha_evento}
                         />
+                    )}
+                    {tab === 'acuerdos' && evento.mostrar_acuerdos_cliente && (
+                        <AcuerdosTab fases={evento.fases} />
                     )}
                 </div>
 

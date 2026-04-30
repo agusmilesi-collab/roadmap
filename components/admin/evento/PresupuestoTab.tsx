@@ -1,27 +1,13 @@
 'use client'
 
-import { useState, useTransition, useRef, useEffect, useMemo } from 'react'
-import dynamic from 'next/dynamic'
+import { useState, useTransition, useRef, useEffect } from 'react'
 import type { Rubro, PagoProveedor } from './EventoDetailClient'
 import {
-    createRubro, updateRubro, deleteRubro, reorderRubros,
+    createRubro, updateRubro, deleteRubro,
     createPago, updatePago, deletePago,
+    createDeposito, updateDeposito, marcarDevuelto, desmarcarDevuelto,
 } from '@/app/(admin)/eventos/[id]/actions'
-import type { CashflowBarChartProps } from './CashflowBarChart'
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
-import type { DropResult, DraggableProvidedDraggableProps, DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
-
-const CashflowBarChart = dynamic<CashflowBarChartProps>(
-    () => import('./CashflowBarChart').then(m => ({ default: m.CashflowBarChart })),
-    {
-        ssr: false,
-        loading: () => (
-            <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                Cargando gráfico…
-            </div>
-        ),
-    }
-)
+import { agruparRubros, type GrupoRubro } from '@/lib/presupuestoMetrics'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -62,45 +48,17 @@ interface Props {
     fechaEvento: string
 }
 
-export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioInicial, fechaEvento }: Props) {
+export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioInicial }: Props) {
     const [tcBlue, setTcBlue] = useState<number>(tipoCambioInicial ?? 0)
     const [tcLoading, setTcLoading] = useState(true)
     const [showARS, setShowARS] = useState(false)
     const [expandedRubroId, setExpandedRubroId] = useState<string | null>(null)
     const [showAddRubro, setShowAddRubro] = useState(false)
 
-    // Custom drag order: null = use server order (alphabetical / saved), non-null = user reordered
-    const [customOrder, setCustomOrder] = useState<string[] | null>(null)
-
-    const orderedRubros = useMemo(() => {
-        if (customOrder === null) return rubros
-        const map = new Map(rubros.map(r => [r.id, r]))
-        return customOrder.map(id => map.get(id)).filter((r): r is Rubro => r !== undefined)
-    }, [rubros, customOrder])
-
-    // Add any newly created rubros (from revalidated props) to the end of customOrder
-    useEffect(() => {
-        if (customOrder !== null) {
-            const existing = new Set(customOrder)
-            const newIds = rubros.filter(r => !existing.has(r.id)).map(r => r.id)
-            if (newIds.length > 0) setCustomOrder(prev => prev ? [...prev, ...newIds] : null)
-        }
-    }, [rubros]) // eslint-disable-line react-hooks/exhaustive-deps
-
-    const [isDragging, setIsDragging] = useState(false)
-    const [dndPending, startDndTransition] = useTransition()
-
-    function handleDragEnd(result: DropResult) {
-        setIsDragging(false)
-        if (!result.destination || result.source.index === result.destination.index) return
-        const next = Array.from(orderedRubros)
-        const [moved] = next.splice(result.source.index, 1)
-        next.splice(result.destination.index, 0, moved)
-        setCustomOrder(next.map(r => r.id))
-        startDndTransition(async () => {
-            await reorderRubros(eventoId, next.map((r, i) => ({ id: r.id, orden: i + 1 })))
-        })
-    }
+    // Orden por estado (Pendiente → Señado → Cerrado), después alfabético.
+    // El drag manual queda relegado al admin/CashflowSemanal en otra vista; acá
+    // los rubros se agrupan automáticamente por estado.
+    const orderedRubros = [...rubros].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
 
     useEffect(() => {
         fetchDolarBlue().then(val => {
@@ -131,158 +89,121 @@ export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioIni
 
     const aPagarFlowUSD = comprometidoUSD - pagadoUSD
     const totalUSD = presupuestoUsd ?? 0
-    const disponibleUSD = totalUSD - comprometidoUSD
     const pctComprometido = totalUSD > 0 ? Math.min(100, Math.round((comprometidoUSD / totalUSD) * 100)) : 0
 
-    const hasPagos = rubros.some(r => (r.pagos_proveedor ?? []).length > 0)
+    const grupos = agruparRubros(orderedRubros)
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
-            {/* ── BLOQUE 1: Resumen financiero ─────────────────────────────── */}
-            <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {/* Header row */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-                    <div>
-                        <p style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', margin: 0 }}>
-                            Resumen financiero
-                        </p>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', margin: '0.2rem 0 0', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: tcLoading ? '#D1D5DB' : '#22C55E' }} />
-                            TC blue: {tcLoading ? 'obteniendo…' : `$ ${fmt(tc)} ARS/USD`}
-                        </p>
-                    </div>
-                    {/* USD / ARS toggle */}
-                    <div style={{ display: 'flex', borderRadius: '20px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
-                        {(['USD', 'ARS'] as const).map(cur => (
-                            <button
-                                key={cur}
-                                type="button"
-                                onClick={() => setShowARS(cur === 'ARS')}
-                                style={{
-                                    padding: '0.28rem 0.9rem',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    fontFamily: 'var(--font-sans)',
-                                    fontWeight: 600,
-                                    fontSize: '0.78rem',
-                                    background: (cur === 'ARS') === showARS ? 'var(--color-gold)' : 'transparent',
-                                    color: (cur === 'ARS') === showARS ? 'white' : 'var(--color-text-muted)',
-                                    transition: 'background 0.15s, color 0.15s',
-                                }}
-                            >{cur}</button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* 2-card summary */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    {/* LEFT — Presupuesto */}
-                    <div style={{ padding: '1rem 1.1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                        <p style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-gold-dark)', margin: 0 }}>Presupuesto</p>
-                        <BudgetRow label="Total" usdValue={totalUSD} tc={tc} showARS={showARS} color="var(--color-text)" />
-                        <BudgetRow label="Comprometido" usdValue={comprometidoUSD} tc={tc} showARS={showARS} color={comprometidoUSD > totalUSD ? 'var(--color-error)' : 'var(--color-gold-dark)'} note={`${pctComprometido}% del total`} />
-                        <BudgetRow label="Disponible" usdValue={disponibleUSD} tc={tc} showARS={showARS} color={disponibleUSD < 0 ? 'var(--color-error)' : 'var(--color-olive)'} note={disponibleUSD < 0 ? '⚠ Excedido' : undefined} />
-                    </div>
-                    {/* RIGHT — Flujo de pagos */}
-                    <div style={{ padding: '1rem 1.1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                        <p style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-gold-dark)', margin: 0 }}>Flujo de pagos</p>
-                        <BudgetRow label="Comprometido" usdValue={comprometidoUSD} tc={tc} showARS={showARS} color="var(--color-text)" />
-                        <BudgetRow label="Pagado" usdValue={pagadoUSD} tc={tc} showARS={showARS} color="#2E7D32" />
-                        <BudgetRow label="A pagar" usdValue={aPagarFlowUSD} tc={tc} showARS={showARS} color={aPagarFlowUSD <= 0 ? '#2E7D32' : '#D97706'} />
+            {/* ── Resumen del evento (estética Progreso) ─────────────────── */}
+            <div className="card" style={{ padding: '1.75rem 2rem 1.5rem' }}>
+                <div style={{ paddingBottom: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.7rem', fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-gold-dark)' }}>
+                                Presupuesto
+                            </div>
+                            <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '1.375rem', fontWeight: 600, margin: '0.25rem 0 0.4rem', color: 'var(--color-text)', letterSpacing: '-0.015em', lineHeight: 1.2 }}>
+                                Resumen del evento
+                            </h2>
+                            <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.55, display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: tcLoading ? '#D1D5DB' : '#22C55E', flexShrink: 0 }} />
+                                TC blue: <strong style={{ color: 'var(--color-text)' }}>{tcLoading ? 'obteniendo…' : `$ ${fmt(tc)} ARS/USD`}</strong>
+                                {' · '}{rubros.length} rubro{rubros.length === 1 ? '' : 's'}
+                            </p>
+                        </div>
+                        <div style={{ display: 'flex', borderRadius: 99, border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+                            {(['USD', 'ARS'] as const).map(cur => (
+                                <button
+                                    key={cur}
+                                    type="button"
+                                    onClick={() => setShowARS(cur === 'ARS')}
+                                    style={{
+                                        padding: '0.28rem 0.9rem',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        fontFamily: 'var(--font-sans)',
+                                        fontWeight: 600,
+                                        fontSize: '0.78rem',
+                                        background: (cur === 'ARS') === showARS ? 'var(--color-gold)' : 'transparent',
+                                        color: (cur === 'ARS') === showARS ? 'white' : 'var(--color-text-muted)',
+                                    }}
+                                >{cur}</button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
-                {/* Budget bar */}
+                {/* 4 KPI cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.65rem' }} className="kpi-grid-presupuesto">
+                    <KPI label="Total" usdValue={totalUSD} tc={tc} showARS={showARS} />
+                    <KPI label="Asignado" usdValue={comprometidoUSD} tc={tc} showARS={showARS} variant="gold" secondary={`${pctComprometido}% del total`} />
+                    <KPI label="Pagado" usdValue={pagadoUSD} tc={tc} showARS={showARS} variant="green" />
+                    <KPI label="A pagar" usdValue={aPagarFlowUSD} tc={tc} showARS={showARS} variant="warn" />
+                </div>
+
                 {totalUSD > 0 && (
-                    <div style={{ height: '6px', backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden' }}>
-                        <div style={{
-                            height: '100%', borderRadius: '99px', transition: 'width 0.3s ease',
-                            width: `${pctComprometido}%`,
-                            backgroundColor: comprometidoUSD > totalUSD ? 'var(--color-error)' : 'var(--color-gold)',
-                        }} />
-                    </div>
+                    <>
+                        <div style={{ marginTop: '1.25rem', height: 8, background: 'var(--color-cream-dark)', borderRadius: 99, overflow: 'hidden' }}>
+                            <div style={{
+                                height: '100%', borderRadius: 99, transition: 'width 0.5s ease',
+                                width: `${pctComprometido}%`,
+                                background: comprometidoUSD > totalUSD ? 'var(--color-error)' : 'linear-gradient(90deg, var(--color-olive), var(--color-gold))',
+                            }} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.45rem', fontFamily: 'var(--font-mono, monospace)' }}>
+                            <span>USD 0</span>
+                            <span>{showARS ? `ARS ${fmt(comprometidoUSD * tc)}` : `USD ${fmt(comprometidoUSD)}`} asignado</span>
+                            <span>{showARS ? `ARS ${fmt(totalUSD * tc)}` : `USD ${fmt(totalUSD)}`} total</span>
+                        </div>
+                    </>
                 )}
             </div>
 
-            {/* ── BLOQUE 2: Cashflow ───────────────────────────────────────── */}
-            {hasPagos && (
-                <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-                        <p style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', margin: 0 }}>
-                            Cashflow de pagos
-                        </p>
-                        {/* Rubro legend */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
-                            {rubros.filter(r => (r.pagos_proveedor ?? []).length > 0).map((r, i) => {
-                                const globalIdx = rubros.indexOf(r)
-                                const color = RUBRO_COLORS[globalIdx % RUBRO_COLORS.length]
-                                return (
-                                    <span key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                                        <span style={{ width: 8, height: 8, borderRadius: '2px', backgroundColor: color, flexShrink: 0 }} />
-                                        {r.nombre}
-                                    </span>
-                                )
-                            })}
-                        </div>
-                    </div>
-                    <CashflowBarChart
-                        rubros={rubros}
-                        fechaEvento={fechaEvento}
-                        tc={tc}
-                        showARS={showARS}
-                    />
-                    <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ width: 10, height: 10, borderRadius: '2px', backgroundColor: '#7C8B70', flexShrink: 0 }} />
-                            Sólido = realizado
-                        </span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ width: 10, height: 10, borderRadius: '2px', backgroundColor: '#7C8B70', opacity: 0.4, flexShrink: 0 }} />
-                            Transparente = pendiente
-                        </span>
-                    </div>
-                </div>
-            )}
-
-            {/* ── Rubros ─────────────────────────────────────────────────────── */}
+            {/* ── Rubros agrupados: Pendiente → Señado → Cerrado ─────────── */}
             {rubros.length === 0 && (
                 <div className="card" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
                     Sin rubros aún. Agregá el primero abajo.
                 </div>
             )}
 
-            <DragDropContext onDragStart={() => setIsDragging(true)} onDragEnd={handleDragEnd}>
-                <Droppable droppableId="rubros">
-                    {(provided) => (
-                        <div
-                            ref={provided.innerRef}
-                            {...provided.droppableProps}
-                            style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', opacity: dndPending ? 0.7 : 1, transition: 'opacity 0.15s' }}
-                        >
-                            {orderedRubros.map((rubro, idx) => (
-                                <Draggable key={rubro.id} draggableId={rubro.id} index={idx}>
-                                    {(provided, snapshot) => (
-                                        <RubroCard
-                                            rubro={rubro}
-                                            rubroColor={RUBRO_COLORS[idx % RUBRO_COLORS.length]}
-                                            eventoId={eventoId}
-                                            tipoCambio={tc}
-                                            isExpanded={!isDragging && expandedRubroId === rubro.id}
-                                            onToggle={() => setExpandedRubroId(expandedRubroId === rubro.id ? null : rubro.id)}
-                                            innerRef={provided.innerRef}
-                                            draggableProps={provided.draggableProps}
-                                            dragHandleProps={provided.dragHandleProps}
-                                            isDragging={snapshot.isDragging}
-                                        />
-                                    )}
-                                </Draggable>
-                            ))}
-                            {provided.placeholder}
+            {(['pendiente', 'señado', 'cerrado'] as const).map(g => {
+                const rubrosGrupo = grupos[g]
+                if (rubrosGrupo.length === 0) return null
+                const titulos: Record<GrupoRubro, string> = {
+                    pendiente: 'Pendiente',
+                    señado: 'Señado',
+                    cerrado: 'Cerrado',
+                }
+                const hints: Record<GrupoRubro, string> = {
+                    pendiente: 'sin compromiso firme',
+                    señado: 'con compromiso firme',
+                    cerrado: 'saldado',
+                }
+                return (
+                    <div key={g}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.55rem', padding: '0.5rem 0.25rem 0.6rem', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-muted)' }}>
+                            {titulos[g]}
+                            <span style={{ color: 'var(--color-text-faint)', fontWeight: 500, fontFamily: 'var(--font-mono, monospace)' }}>
+                                · {rubrosGrupo.length} rubro{rubrosGrupo.length === 1 ? '' : 's'} {hints[g]}
+                            </span>
                         </div>
-                    )}
-                </Droppable>
-            </DragDropContext>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {rubrosGrupo.map(rubro => (
+                                <RubroCard
+                                    key={rubro.id}
+                                    rubro={rubro}
+                                    eventoId={eventoId}
+                                    tipoCambio={tc}
+                                    isExpanded={expandedRubroId === rubro.id}
+                                    onToggle={() => setExpandedRubroId(expandedRubroId === rubro.id ? null : rubro.id)}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )
+            })}
 
             {/* ── Add Rubro ──────────────────────────────────────────────────── */}
             {showAddRubro ? (
@@ -297,67 +218,51 @@ export function PresupuestoTab({ rubros, eventoId, presupuestoUsd, tipoCambioIni
     )
 }
 
-// ─── RUBRO_COLORS (re-exported for chart) ────────────────────────────────────
+// ─── KPI card (estilo Progreso, usado en el resumen) ─────────────────────────
 
-const RUBRO_COLORS = [
-    '#7C8B70', '#C9A84C', '#6B7F9E', '#C17B5C', '#8B7C9E',
-    '#5C8B7C', '#9E7C6B', '#6B8B5C', '#9E6B7C', '#5C6B8B',
-]
-
-// ─── FinancialCard ────────────────────────────────────────────────────────────
-
-function BudgetRow({ label, usdValue, tc, showARS, color, note }: {
-    label: string; usdValue: number; tc: number; showARS: boolean; color?: string; note?: string
-}) {
-    const primary = showARS ? `ARS ${fmt(usdValue * tc)}` : `USD ${fmt(usdValue)}`
-    const secondary = showARS ? `USD ${fmt(usdValue)}` : `ARS ${fmt(usdValue * tc)}`
-    return (
-        <div>
-            <p style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', margin: '0 0 0.15rem' }}>{label}</p>
-            <p style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-serif)', color: color ?? 'var(--color-text)', margin: 0, lineHeight: 1.2 }}>{primary}</p>
-            <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', margin: '0.1rem 0 0' }}>{secondary}{note ? ` · ${note}` : ''}</p>
-        </div>
-    )
-}
-
-function FinancialCard({ label, usdValue, arsValue, showARS, color, sub }: {
+function KPI({ label, usdValue, tc, showARS, secondary, variant }: {
     label: string
     usdValue: number
-    arsValue: number
+    tc: number
     showARS: boolean
-    color: string
-    sub?: string
+    secondary?: string
+    variant?: 'gold' | 'green' | 'warn'
 }) {
-    const primary = showARS ? arsValue : usdValue
-    const secondary = showARS ? usdValue : arsValue
-    const primaryPrefix = showARS ? 'ARS' : 'USD'
-    const secondaryPrefix = showARS ? 'USD' : 'ARS'
-
+    const value = showARS ? `ARS ${fmt(usdValue * tc)}` : `USD ${fmt(usdValue)}`
+    const valueColor =
+        variant === 'gold' ? 'var(--color-gold-dark)' :
+        variant === 'green' ? '#2E7D32' :
+        variant === 'warn' ? '#D97706' :
+        'var(--color-text)'
     return (
-        <div style={{ padding: '1.1rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-cream)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-            <span style={{ fontSize: '0.7rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)' }}>{label}</span>
-            <span style={{ fontSize: '1.1rem', fontWeight: 700, color, fontFamily: 'var(--font-serif)', lineHeight: 1.2 }}>
-                {primaryPrefix} {fmt(primary)}
+        <div style={{
+            padding: '0.95rem 1rem',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-cream)',
+            border: '1px solid var(--color-border)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.18rem',
+        }}>
+            <span style={{ fontSize: '0.66rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-muted)' }}>
+                {label}
             </span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                {secondaryPrefix} {fmt(secondary)}
+            <span style={{ fontFamily: 'var(--font-serif)', fontSize: '1.35rem', fontWeight: 700, lineHeight: 1.15, color: valueColor }}>
+                {value}
             </span>
-            {sub && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>{sub}</span>}
+            {secondary && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{secondary}</span>}
         </div>
     )
 }
 
 // ─── RubroCard ────────────────────────────────────────────────────────────────
 
-function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onToggle,
-    innerRef, draggableProps, dragHandleProps, isDragging,
-}: {
-    rubro: Rubro; rubroColor: string; eventoId: string; tipoCambio: number
-    isExpanded: boolean; onToggle: () => void
-    innerRef?: (el: HTMLDivElement | null) => void
-    draggableProps?: DraggableProvidedDraggableProps
-    dragHandleProps?: DraggableProvidedDragHandleProps | null
-    isDragging?: boolean
+function RubroCard({ rubro, eventoId, tipoCambio, isExpanded, onToggle }: {
+    rubro: Rubro
+    eventoId: string
+    tipoCambio: number
+    isExpanded: boolean
+    onToggle: () => void
 }) {
     const [isPending, startTransition] = useTransition()
     const [confirmDelete, setConfirmDelete] = useState(false)
@@ -378,7 +283,9 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
     const costoNum = parseFloat(costoTotal) || 0
     const costoUSD = moneda === 'USD' ? costoNum : costoNum / tcEfectivo
 
-    const pagos = rubro.pagos_proveedor ?? []
+    const allPagos = rubro.pagos_proveedor ?? []
+    const pagos = allPagos.filter(p => p.tipo !== 'deposito_garantia')
+    const deposito = allPagos.find(p => p.tipo === 'deposito_garantia') ?? null
     const pagosRealizados = pagos.filter(p => p.realizado).length
     const pagosPendientes = pagos.length - pagosRealizados
 
@@ -449,36 +356,15 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
 
     return (
         <div
-            ref={innerRef}
-            {...draggableProps}
             style={{
                 ...st.rubroCard,
-                borderLeftWidth: '3px', borderLeftStyle: 'solid', borderLeftColor: rubroColor,
-                borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: isDragging || isExpanded ? 'var(--color-gold)' : '#E5E7EB',
-                borderRightWidth: '1px', borderRightStyle: 'solid', borderRightColor: isDragging || isExpanded ? 'var(--color-gold)' : '#E5E7EB',
-                borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: isDragging || isExpanded ? 'var(--color-gold)' : '#E5E7EB',
-                boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.12)' : undefined,
-                ...draggableProps?.style,
+                border: '1px solid',
+                borderColor: isExpanded ? 'var(--color-gold)' : 'var(--color-border)',
             }}
         >
             {/* ── Summary row ──────────────────────────────────────────────── */}
             <div style={{ display: 'flex', alignItems: 'stretch' }}>
-                {/* Drag handle */}
-                <div
-                    {...(dragHandleProps ?? {})}
-                    style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        padding: '0 0.35rem 0 0.65rem', cursor: 'grab', flexShrink: 0,
-                        color: 'var(--color-text-muted)', opacity: 0.45,
-                        userSelect: 'none',
-                    }}
-                >
-                    <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
-                        <circle cx="5" cy="3" r="1.5" /><circle cx="5" cy="8" r="1.5" /><circle cx="5" cy="13" r="1.5" />
-                        <circle cx="11" cy="3" r="1.5" /><circle cx="11" cy="8" r="1.5" /><circle cx="11" cy="13" r="1.5" />
-                    </svg>
-                </div>
-            <button onClick={onToggle} style={{ ...st.rubroRowBtn, flex: 1, paddingLeft: '0.5rem' }}>
+            <button onClick={onToggle} style={{ ...st.rubroRowBtn, flex: 1 }}>
                 {/* 3-row content */}
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.28rem', textAlign: 'left' }}>
                     {/* Row 1: nombre · costo */}
@@ -594,6 +480,9 @@ function RubroCard({ rubro, rubroColor, eventoId, tipoCambio, isExpanded, onTogg
                             {moneda === 'ARS' && <span style={st.computedItem}>TC usado: <strong>{fmt(tcEfectivo)} ARS/USD</strong>{rubro.tipo_cambio_propio ? ' (propio)' : ' (blue)'}</span>}
                         </div>
                     )}
+
+                    {/* Depósito en garantía */}
+                    <DepositoBlock rubro={rubro} eventoId={eventoId} deposito={deposito} />
 
                     {/* Pagos */}
                     <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '0.85rem' }}>
@@ -826,6 +715,157 @@ function AddRubroForm({ eventoId, onDone }: { eventoId: string; onDone: () => vo
                 </div>
                 <button onClick={handleSubmit} disabled={isPending || !nombre.trim()} className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.55rem 1.1rem' }}>{isPending ? 'Creando…' : 'Crear rubro'}</button>
                 <button onClick={onDone} className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.55rem 0.9rem' }}>Cancelar</button>
+            </div>
+        </div>
+    )
+}
+
+// ─── DepositoBlock ────────────────────────────────────────────────────────────
+
+function DepositoBlock({ rubro, eventoId, deposito }: {
+    rubro: Rubro
+    eventoId: string
+    deposito: PagoProveedor | null
+}) {
+    const [isPending, startTransition] = useTransition()
+    const hasDeposito = deposito !== null
+
+    const [monto, setMonto] = useState(String(deposito?.monto ?? ''))
+    const [moneda, setMoneda] = useState<'USD' | 'ARS'>((deposito?.moneda as 'USD' | 'ARS') ?? 'USD')
+    const [fecha, setFecha] = useState(deposito?.fecha ?? new Date().toISOString().slice(0, 10))
+
+    function toggleDeposito() {
+        if (hasDeposito) {
+            // No desactivar — pedir confirmación de eliminación con el botón aparte
+            return
+        }
+        const m = parseFloat(monto) || 0
+        if (!m) return
+        startTransition(async () => {
+            await createDeposito(rubro.id, eventoId, { monto: m, moneda, fecha })
+        })
+    }
+
+    function saveField(data: Partial<{ monto: number; moneda: 'USD' | 'ARS'; fecha: string; realizado: boolean }>) {
+        if (!deposito) return
+        startTransition(async () => { await updateDeposito(deposito.id, eventoId, data) })
+    }
+
+    function handleMarcarPagado() {
+        if (!deposito) return
+        startTransition(async () => { await updateDeposito(deposito.id, eventoId, { realizado: !deposito.realizado }) })
+    }
+
+    function handleMarcarDevuelto() {
+        if (!deposito) return
+        const fechaDev = new Date().toISOString().slice(0, 10)
+        startTransition(async () => {
+            if (deposito.devuelto) await desmarcarDevuelto(deposito.id, eventoId)
+            else await marcarDevuelto(deposito.id, eventoId, fechaDev)
+        })
+    }
+
+    function handleEliminar() {
+        if (!deposito) return
+        startTransition(async () => { await deletePago(deposito.id, eventoId) })
+    }
+
+    if (!hasDeposito) {
+        return (
+            <div style={{
+                padding: '0.75rem 0.9rem',
+                background: 'var(--color-cream)',
+                border: '1px dashed var(--color-border)',
+                borderRadius: 'var(--radius-sm)',
+                display: 'flex',
+                alignItems: 'flex-end',
+                gap: '0.65rem',
+                flexWrap: 'wrap',
+            }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                    <p style={{ ...st.sectionTitle, marginBottom: '0.35rem' }}>Depósito en garantía</p>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                        Si el proveedor lo pide. Se devuelve al finalizar si todo OK.
+                    </p>
+                </div>
+                <input type="number" min="0" step="100" value={monto} onChange={e => setMonto(e.target.value)} placeholder="Monto" className="form-input" style={{ width: 120, fontSize: '0.85rem' }} />
+                <select value={moneda} onChange={e => setMoneda(e.target.value as 'USD' | 'ARS')} className="form-input" style={{ width: 80, fontSize: '0.85rem' }}>
+                    <option value="USD">USD</option>
+                    <option value="ARS">ARS</option>
+                </select>
+                <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="form-input" style={{ width: 150, fontSize: '0.85rem' }} />
+                <button onClick={toggleDeposito} disabled={isPending || !parseFloat(monto)} className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.4rem 0.85rem' }}>
+                    + Activar depósito
+                </button>
+            </div>
+        )
+    }
+
+    const statusBg = deposito.devuelto
+        ? 'rgba(46,125,50,0.08)'
+        : deposito.realizado
+            ? 'rgba(217,119,6,0.06)'
+            : 'rgba(120,120,120,0.06)'
+    const statusBorder = deposito.devuelto
+        ? 'rgba(46,125,50,0.35)'
+        : deposito.realizado
+            ? 'rgba(217,119,6,0.25)'
+            : 'rgba(120,120,120,0.2)'
+    const statusColor = deposito.devuelto ? '#2E7D32' : deposito.realizado ? '#D97706' : '#666'
+    const statusLabel = deposito.devuelto
+        ? `✓ Devuelto · ${deposito.fecha_devolucion ?? ''}`
+        : deposito.realizado
+            ? 'Pagado · pendiente devolución'
+            : 'Aún sin pagar'
+
+    return (
+        <div style={{
+            padding: '0.85rem 1rem',
+            background: statusBg,
+            border: `1px solid ${statusBorder}`,
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.6rem',
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span>🔒</span>
+                    <p style={{ ...st.sectionTitle, margin: 0 }}>Depósito en garantía</p>
+                </div>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: statusColor, padding: '0.2rem 0.6rem', background: 'var(--color-white)', borderRadius: 99 }}>
+                    {statusLabel}
+                </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <div className="form-group" style={{ minWidth: 110, flex: 1 }}>
+                    <label className="form-label">Monto</label>
+                    <input type="number" min="0" step="100" value={monto} onChange={e => setMonto(e.target.value)} onBlur={() => saveField({ monto: parseFloat(monto) || 0 })} className="form-input" style={{ fontSize: '0.85rem' }} />
+                </div>
+                <div className="form-group">
+                    <label className="form-label">Moneda</label>
+                    <select value={moneda} onChange={e => { setMoneda(e.target.value as 'USD' | 'ARS'); saveField({ moneda: e.target.value as 'USD' | 'ARS' }) }} className="form-input" style={{ width: 80, fontSize: '0.85rem' }}>
+                        <option value="USD">USD</option>
+                        <option value="ARS">ARS</option>
+                    </select>
+                </div>
+                <div className="form-group" style={{ minWidth: 140, flex: 1 }}>
+                    <label className="form-label">Fecha pago</label>
+                    <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} onBlur={() => saveField({ fecha })} className="form-input" style={{ fontSize: '0.85rem' }} />
+                </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <button onClick={handleMarcarPagado} disabled={isPending} className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.35rem 0.8rem' }}>
+                    {deposito.realizado ? 'Marcar como no pagado' : '✓ Marcar pagado'}
+                </button>
+                {deposito.realizado && (
+                    <button onClick={handleMarcarDevuelto} disabled={isPending} className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.35rem 0.8rem', borderColor: deposito.devuelto ? 'var(--color-border)' : 'rgba(46,125,50,0.4)', color: deposito.devuelto ? 'var(--color-text-muted)' : '#2E7D32' }}>
+                        {deposito.devuelto ? '↩ Desmarcar devuelto' : '↩ Marcar como devuelto'}
+                    </button>
+                )}
+                <button onClick={handleEliminar} disabled={isPending} className="btn-ghost" style={{ fontSize: '0.78rem', padding: '0.35rem 0.8rem', color: 'var(--color-error)', borderColor: 'rgba(200,75,75,0.2)', marginLeft: 'auto' }}>
+                    Eliminar depósito
+                </button>
             </div>
         </div>
     )

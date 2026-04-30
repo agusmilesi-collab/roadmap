@@ -3,6 +3,8 @@
 import { useState, useTransition } from 'react'
 import { ProgresoTab } from './ProgresoTab'
 import { PresupuestoTab } from './PresupuestoTab'
+import { DashboardTab } from './DashboardTab'
+import { AcuerdosTab } from './AcuerdosTab'
 import { updateEvento } from '@/app/(admin)/eventos/[id]/actions'
 
 // ─── Shared types (passed as props from server) ──────────────────────────────
@@ -49,6 +51,9 @@ export interface PagoProveedor {
     realizado: boolean
     descripcion: string | null
     created_at: string
+    tipo: 'cuota' | 'sena' | 'deposito_garantia'
+    devuelto: boolean
+    fecha_devolucion: string | null
 }
 
 export interface Rubro {
@@ -77,6 +82,8 @@ export interface EventoData {
     presupuesto_usd: number | null
     tipo_cambio: number | null
     token_acceso: string
+    mostrar_dashboard_cliente: boolean
+    mostrar_acuerdos_cliente: boolean
     planner: { nombre: string; email: string; telefono: string | null } | null
     fases: Fase[]
     rubros: Rubro[]
@@ -177,7 +184,7 @@ interface Props {
 }
 
 export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePlanner = true }: Props) {
-    const [tab, setTab] = useState<'progreso' | 'presupuesto'>('progreso')
+    const [tab, setTab] = useState<'progreso' | 'presupuesto' | 'dashboard' | 'acuerdos'>('progreso')
     const [editingHeader, setEditingHeader] = useState(false)
     const [editNombre, setEditNombre] = useState(evento.nombre)
     const [editPlannerId, setEditPlannerId] = useState(plannerId ?? '')
@@ -353,20 +360,40 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
             </div>
 
             <div style={styles.tabs}>
-                {(['progreso', 'presupuesto'] as const).map((t) => (
+                {(['progreso', 'presupuesto', 'dashboard', 'acuerdos'] as const).map((t) => (
                     <button
                         key={t}
                         onClick={() => setTab(t)}
                         style={{ ...styles.tabBtn, ...(tab === t ? styles.tabBtnActive : {}) }}
                     >
-                        {t === 'progreso' ? '📋 Progreso' : '💰 Presupuesto'}
+                        {t === 'progreso' ? '📋 Progreso'
+                            : t === 'presupuesto' ? '💰 Presupuesto'
+                            : t === 'dashboard' ? '📊 Dashboard'
+                            : '📝 Acuerdos'}
                     </button>
                 ))}
             </div>
 
-            {tab === 'progreso' ? (
+            {tab === 'progreso' && (
                 <ProgresoTab fases={evento.fases} eventoId={evento.id} />
-            ) : (
+            )}
+            {tab === 'dashboard' && (
+                <>
+                    <VisibilidadClienteBanner
+                        eventoId={evento.id}
+                        field="mostrar_dashboard_cliente"
+                        currentValue={evento.mostrar_dashboard_cliente}
+                        labelTab="Dashboard"
+                    />
+                    <DashboardTab
+                        rubros={evento.rubros}
+                        presupuestoUsd={evento.presupuesto_usd}
+                        tipoCambioInicial={evento.tipo_cambio}
+                        fechaEvento={evento.fecha_evento}
+                    />
+                </>
+            )}
+            {tab === 'presupuesto' && (
                 <PresupuestoTab
                     rubros={evento.rubros}
                     eventoId={evento.id}
@@ -374,6 +401,17 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                     tipoCambioInicial={evento.tipo_cambio}
                     fechaEvento={evento.fecha_evento}
                 />
+            )}
+            {tab === 'acuerdos' && (
+                <>
+                    <VisibilidadClienteBanner
+                        eventoId={evento.id}
+                        field="mostrar_acuerdos_cliente"
+                        currentValue={evento.mostrar_acuerdos_cliente}
+                        labelTab="Acuerdos"
+                    />
+                    <AcuerdosTab fases={evento.fases} />
+                </>
             )}
         </div>
     )
@@ -394,3 +432,71 @@ const styles: Record<string, React.CSSProperties> = {
     tabBtn: { padding: '0.6rem 1.25rem', fontSize: '0.9rem', fontFamily: 'var(--font-sans)', fontWeight: 500, background: 'var(--color-white)', border: '1.5px solid var(--color-border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--color-text-muted)', transition: 'all 0.15s ease' },
     tabBtnActive: { borderColor: 'var(--color-gold)', color: 'var(--color-gold-dark)', backgroundColor: 'rgba(201,168,76,0.06)' },
 }
+
+// ─── VisibilidadClienteBanner ────────────────────────────────────────────────
+
+function VisibilidadClienteBanner({
+    eventoId, field, currentValue, labelTab,
+}: {
+    eventoId: string
+    field: 'mostrar_dashboard_cliente' | 'mostrar_acuerdos_cliente'
+    currentValue: boolean
+    labelTab: string
+}) {
+    const [visible, setVisible] = useState(currentValue)
+    const [isPending, startTr] = useTransition()
+
+    function toggle() {
+        const next = !visible
+        setVisible(next)
+        startTr(async () => {
+            await updateEvento(eventoId, { [field]: next })
+        })
+    }
+
+    return (
+        <div
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.75rem',
+                padding: '0.7rem 1rem',
+                marginBottom: '1rem',
+                background: visible ? 'rgba(46,125,50,0.04)' : 'rgba(120,120,120,0.05)',
+                border: '1px solid',
+                borderColor: visible ? 'rgba(46,125,50,0.25)' : 'rgba(120,120,120,0.2)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.82rem',
+            }}
+        >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: visible ? '#2E7D32' : 'var(--color-text-muted)', fontWeight: 500 }}>
+                <span>{visible ? '👁' : '🚫'}</span>
+                {visible
+                    ? `${labelTab} es visible para el cliente.`
+                    : `${labelTab} oculto para el cliente.`}
+            </span>
+            <button
+                onClick={toggle}
+                disabled={isPending}
+                style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    padding: '0.35rem 0.85rem',
+                    borderRadius: 99,
+                    border: '1px solid',
+                    borderColor: visible ? 'rgba(46,125,50,0.35)' : 'var(--color-border)',
+                    background: visible ? 'transparent' : 'var(--color-gold)',
+                    color: visible ? '#2E7D32' : 'white',
+                    cursor: isPending ? 'wait' : 'pointer',
+                    fontFamily: 'var(--font-sans)',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s',
+                }}
+            >
+                {isPending ? 'Guardando…' : visible ? 'Ocultar al cliente' : 'Mostrar al cliente'}
+            </button>
+        </div>
+    )
+}
+

@@ -274,7 +274,15 @@ export async function updateTipoCambio(eventoId: string, tipoCambio: number) {
 
 export async function updateEvento(
     eventoId: string,
-    data: Partial<{ nombre: string; planner_id: string | null; fecha_evento: string; presupuesto_usd: number | null; tipo_cambio: number | null }>
+    data: Partial<{
+        nombre: string
+        planner_id: string | null
+        fecha_evento: string
+        presupuesto_usd: number | null
+        tipo_cambio: number | null
+        mostrar_dashboard_cliente: boolean
+        mostrar_acuerdos_cliente: boolean
+    }>
 ) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -284,6 +292,66 @@ export async function updateEvento(
 }
 
 // ─── Pagos proveedor ──────────────────────────────────────────────────────────
+
+// Recalcula el estado del rubro a partir de sus pagos.
+// Solo SUBE de nivel — nunca degrada (respeta overrides manuales del usuario).
+//   - Hay >=1 pago realizado (cuota/seña) y saldo cubierto → 'completado'
+//   - Hay >=1 pago realizado (cuota/seña)                 → mínimo 'señado'
+//   - Sin pagos realizados                                → no toca el estado
+// Los depósitos en garantía NO cuentan para el saldo (son retornables).
+const NIVEL_ESTADO: Record<string, number> = {
+    pendiente: 0,
+    en_proceso: 1,
+    decidido: 2,
+    señado: 3,
+    completado: 4,
+}
+async function recalcularEstadoRubro(rubroId: string) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    const { data: rubro } = await db
+        .from('rubros')
+        .select(`
+            id, estado, costo_total, monto_original, moneda, tipo_cambio_propio,
+            pagos_proveedor ( monto, moneda, tipo_cambio_snapshot, realizado, tipo )
+        `)
+        .eq('id', rubroId)
+        .maybeSingle()
+    if (!rubro) return
+
+    const costoBase = rubro.costo_total ?? rubro.monto_original
+    if (!costoBase) return
+
+    const tcRubro: number = rubro.tipo_cambio_propio ?? 0
+    function toUSD(monto: number, moneda: string, tcSnap: number | null): number {
+        if (moneda === 'USD') return monto
+        const tc = tcSnap && tcSnap > 0 ? tcSnap : tcRubro
+        return tc > 0 ? monto / tc : 0
+    }
+    const costoUSD = toUSD(costoBase, rubro.moneda, null)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pagos = ((rubro.pagos_proveedor ?? []) as any[]).filter(p => p.tipo !== 'deposito_garantia')
+    const realizadosUSD = pagos
+        .filter(p => p.realizado)
+        .reduce((sum, p) => sum + toUSD(p.monto, p.moneda, p.tipo_cambio_snapshot), 0)
+    const hayRealizados = pagos.some(p => p.realizado)
+
+    let candidato: string = rubro.estado
+    if (hayRealizados && costoUSD > 0 && realizadosUSD >= costoUSD - 0.5) {
+        candidato = 'completado'
+    } else if (hayRealizados) {
+        candidato = 'señado'
+    }
+
+    // Solo aplicar si sube de nivel (nunca degrada)
+    const nivelActual = NIVEL_ESTADO[rubro.estado] ?? 0
+    const nivelCandidato = NIVEL_ESTADO[candidato] ?? 0
+    if (nivelCandidato > nivelActual) {
+        await db.from('rubros').update({ estado: candidato }).eq('id', rubroId)
+    }
+}
 
 export async function createPago(
     rubroId: string,
@@ -305,6 +373,7 @@ export async function createPago(
         descripcion: data.descripcion ?? null,
         realizado: false,
     })
+    await recalcularEstadoRubro(rubroId)
     revalidate(eventoId)
 }
 
@@ -322,13 +391,99 @@ export async function updatePago(
 ) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('pagos_proveedor').update(data).eq('id', id)
+    const db = supabase as any
+    // Necesitamos el rubro_id para recalcular después
+    const { data: pago } = await db
+        .from('pagos_proveedor')
+        .select('rubro_id')
+        .eq('id', id)
+        .maybeSingle()
+    await db.from('pagos_proveedor').update(data).eq('id', id)
+    if (pago?.rubro_id) await recalcularEstadoRubro(pago.rubro_id)
     revalidate(eventoId)
 }
 
 export async function deletePago(id: string, eventoId: string) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('pagos_proveedor').delete().eq('id', id)
+    const db = supabase as any
+    const { data: pago } = await db
+        .from('pagos_proveedor')
+        .select('rubro_id')
+        .eq('id', id)
+        .maybeSingle()
+    await db.from('pagos_proveedor').delete().eq('id', id)
+    if (pago?.rubro_id) await recalcularEstadoRubro(pago.rubro_id)
+    revalidate(eventoId)
+}
+
+// ─── Depósitos en garantía ───────────────────────────────────────────────────
+// Un depósito es un pago_proveedor con tipo='deposito_garantia'.
+// Reutiliza toda la infraestructura de pagos: aparece en cashflow, queries, etc.
+
+export async function createDeposito(
+    rubroId: string,
+    eventoId: string,
+    data: {
+        monto: number
+        moneda: Moneda
+        fecha: string
+        descripcion?: string | null
+    }
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('pagos_proveedor').insert({
+        rubro_id: rubroId,
+        tipo: 'deposito_garantia',
+        monto: data.monto,
+        moneda: data.moneda,
+        fecha: data.fecha,
+        descripcion: data.descripcion ?? null,
+        realizado: false,
+        devuelto: false,
+    })
+    revalidate(eventoId)
+}
+
+export async function updateDeposito(
+    id: string,
+    eventoId: string,
+    data: Partial<{
+        monto: number
+        moneda: Moneda
+        fecha: string
+        realizado: boolean
+        tipo_cambio_snapshot: number | null
+        descripcion: string | null
+    }>
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('pagos_proveedor').update(data).eq('id', id)
+    revalidate(eventoId)
+}
+
+export async function marcarDevuelto(
+    id: string,
+    eventoId: string,
+    fechaDevolucion: string
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('pagos_proveedor').update({
+        devuelto: true,
+        fecha_devolucion: fechaDevolucion,
+    }).eq('id', id)
+    revalidate(eventoId)
+}
+
+export async function desmarcarDevuelto(id: string, eventoId: string) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('pagos_proveedor').update({
+        devuelto: false,
+        fecha_devolucion: null,
+    }).eq('id', id)
     revalidate(eventoId)
 }

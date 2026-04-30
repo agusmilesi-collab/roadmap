@@ -35,6 +35,8 @@ export default async function PlannerEventoPage({ params }: Props) {
       tipo_cambio,
       token_acceso,
       planner_id,
+      mostrar_dashboard_cliente,
+      mostrar_acuerdos_cliente,
       planners ( nombre, email, telefono ),
       fases (
         id, nombre, descripcion, fecha_inicio, fecha_fin, position,
@@ -49,7 +51,8 @@ export default async function PlannerEventoPage({ params }: Props) {
         tipo_cambio_propio, sena_pct, fecha_decision, fecha_sena, notas, orden,
         costo_total, descripcion_servicio,
         pagos_proveedor (
-          id, rubro_id, monto, moneda, tipo_cambio_snapshot, fecha, realizado, descripcion, created_at
+          id, rubro_id, monto, moneda, tipo_cambio_snapshot, fecha, realizado, descripcion, created_at,
+          tipo, devuelto, fecha_devolucion
         )
       )
     `)
@@ -60,6 +63,7 @@ export default async function PlannerEventoPage({ params }: Props) {
         id: string; nombre: string; tipo_evento: string; fecha_evento: string
         presupuesto_usd: number | null; tipo_cambio: number | null
         token_acceso: string; planner_id: string | null
+        mostrar_dashboard_cliente: boolean; mostrar_acuerdos_cliente: boolean
         planners: { nombre: string; email: string; telefono: string | null } | null
         fases: {
             id: string; nombre: string; descripcion: string | null
@@ -81,6 +85,8 @@ export default async function PlannerEventoPage({ params }: Props) {
                 id: string; rubro_id: string; monto: number; moneda: string
                 tipo_cambio_snapshot: number | null; fecha: string
                 realizado: boolean; descripcion: string | null; created_at: string
+                tipo: 'cuota' | 'sena' | 'deposito_garantia'
+                devuelto: boolean; fecha_devolucion: string | null
             }[]
         }[]
     }
@@ -150,6 +156,8 @@ export default async function PlannerEventoPage({ params }: Props) {
                     presupuesto_usd: evento.presupuesto_usd,
                     tipo_cambio: evento.tipo_cambio,
                     token_acceso: evento.token_acceso,
+                    mostrar_dashboard_cliente: evento.mostrar_dashboard_cliente ?? true,
+                    mostrar_acuerdos_cliente: evento.mostrar_acuerdos_cliente ?? true,
                     planner: plannerInfo,
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     fases: fasesConTemas as any,

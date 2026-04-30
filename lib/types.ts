@@ -25,6 +25,8 @@ export interface Evento {
     token_acceso: string
     planner_id: string | null
     created_at: string
+    mostrar_dashboard_cliente: boolean
+    mostrar_acuerdos_cliente: boolean
     // joins
     planner?: Planner
 }
@@ -90,6 +92,8 @@ export interface Rubro {
     pagos?: PagoProveedor[]
 }
 
+export type TipoPago = 'cuota' | 'sena' | 'deposito_garantia'
+
 export interface PagoProveedor {
     id: string
     rubro_id: string
@@ -100,6 +104,9 @@ export interface PagoProveedor {
     realizado: boolean
     descripcion: string | null
     created_at: string
+    tipo: TipoPago
+    devuelto: boolean
+    fecha_devolucion: string | null
 }
 
 export interface PlantillaFase {
