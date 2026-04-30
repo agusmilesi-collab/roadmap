@@ -18,17 +18,21 @@ export interface EventoCliente {
         id: string
         nombre: string
         descripcion: string | null
-        orden: number
-        tareas: {
+        fecha_inicio: string | null
+        fecha_fin: string | null
+        position: number
+        temas: {
             id: string
             nombre: string
-            tipo: string | null
-            fecha: string | null
-            estado: string
-            completada: boolean
-            resumen: string | null
-            orden: number
-            acuerdos: { id: string; texto: string }[]
+            descripcion: string | null
+            position: number
+            tareas: {
+                id: string
+                nombre: string
+                estado: string
+                position: number
+            }[]
+            acuerdos: { id: string; texto: string; created_at: string }[]
         }[]
     }[]
     rubros: {
@@ -83,12 +87,24 @@ function calcProgresoTotal(fases: EventoCliente['fases']): { total: number; comp
     let total = 0
     let completadas = 0
     for (const f of fases) {
-        for (const t of f.tareas) {
-            total++
-            if (t.completada) completadas++
+        for (const tema of f.temas) {
+            for (const t of tema.tareas) {
+                total++
+                if (t.estado === 'completada') completadas++
+            }
         }
     }
     return { total, completadas }
+}
+
+function faseVencida(fase: EventoCliente['fases'][number]): boolean {
+    if (!fase.fecha_fin) return false
+    const tareas = fase.temas.flatMap((t) => t.tareas)
+    const total = tareas.length
+    const done = tareas.filter((t) => t.estado === 'completada').length
+    if (total > 0 && done === total) return false
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+    return new Date(fase.fecha_fin + 'T12:00:00') < hoy
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -108,24 +124,17 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
         <main style={st.main}>
             <div style={st.container}>
 
-                {/* ─── Header ────────────────────────────────────────── */}
                 <header style={st.header}>
-                    {/* Logo */}
                     <img src="/logo.svg" alt="TMP Eventos" style={{ height: '56px', width: 'auto', marginBottom: '0.5rem' }} />
 
-                    {/* Ornament */}
                     <p style={st.ornament}>✦</p>
 
-                    {/* Subtitle + Name */}
                     <p style={st.subtitle}>{subtitle}</p>
                     <h1 style={st.title}>{evento.nombre}</h1>
 
-                    {/* Date */}
                     <p style={st.fechaLabel}>{fechaLabel}</p>
 
-                    {/* Stats row */}
                     <div style={st.statsRow}>
-                        {/* Días restantes */}
                         <div style={st.statChip}>
                             <span style={st.statValue}>{dias > 0 ? dias : 0}</span>
                             <span style={st.statLabel}>{dias === 1 ? 'día' : 'días'} restantes</span>
@@ -133,28 +142,22 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
 
                         <div style={st.statDivider} />
 
-                        {/* Avance */}
                         <div style={st.statChip}>
                             <span style={st.statValue}>{pct}%</span>
                             <span style={st.statLabel}>avance ({completadas}/{total})</span>
                         </div>
                     </div>
 
-                    {/* Segmented Progress bar */}
                     {total > 0 && (
                         <div style={st.progressWrap}>
-                            {/* Segments */}
                             <div style={{ display: 'flex', gap: '3px', height: '6px' }}>
                                 {evento.fases.map((fase) => {
-                                    const ft = fase.tareas.length
-                                    const fc = fase.tareas.filter((t) => t.completada).length
+                                    const tareasFase = fase.temas.flatMap((t) => t.tareas)
+                                    const ft = tareasFase.length
+                                    const fc = tareasFase.filter((t) => t.estado === 'completada').length
                                     const fp = ft === 0 ? 0 : Math.round((fc / ft) * 100)
-                                    const hasVencida = fase.tareas.some((t) => {
-                                        if (t.completada || !t.fecha) return false
-                                        const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
-                                        return new Date(t.fecha + 'T12:00:00') < hoy
-                                    })
-                                    const fillBg = hasVencida
+                                    const vencida = faseVencida(fase)
+                                    const fillBg = vencida
                                         ? '#EF4444'
                                         : fp === 100
                                             ? '#7C8B70'
@@ -165,7 +168,7 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                                     return (
                                         <div
                                             key={fase.id}
-                                            title={`${fase.nombre}: ${fp}%${hasVencida ? ' ⚠ con tareas vencidas' : ''}`}
+                                            title={`${fase.nombre}: ${fp}%${vencida ? ' ⚠ etapa vencida' : ''}`}
                                             style={{ flex: 1, backgroundColor: trackBg, borderRadius: '99px', overflow: 'hidden', position: 'relative' }}
                                         >
                                             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${fp}%`, backgroundColor: fillBg, borderRadius: '99px', transition: 'width 0.3s ease, background-color 0.3s ease' }} />
@@ -173,7 +176,6 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                                     )
                                 })}
                             </div>
-                            {/* Labels */}
                             <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
                                 {evento.fases.map((fase) => (
                                     <div key={fase.id} style={{ flex: 1, minWidth: 0, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.62rem', color: '#6B7280', lineHeight: 1 }}>
@@ -184,11 +186,9 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                         </div>
                     )}
 
-                    {/* Divider */}
                     <div style={st.headerDivider} />
                 </header>
 
-                {/* ─── Planner card (compact, above tabs) ─────────────────── */}
                 {evento.planner && (
                     <PlannerCard
                         nombre={evento.planner.nombre}
@@ -199,7 +199,6 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                     />
                 )}
 
-                {/* ─── Tabs ──────────────────────────────────────────── */}
                 <div style={st.tabRow}>
                     <button
                         onClick={() => setTab('progreso')}
@@ -215,7 +214,6 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                     </button>
                 </div>
 
-                {/* ─── Tab content ───────────────────────────────────── */}
                 <div style={st.content}>
                     {tab === 'progreso' && (
                         <ProgresoClienteTab fases={evento.fases} />
@@ -230,7 +228,6 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                     )}
                 </div>
 
-                {/* Footer */}
                 <footer style={st.footer}>
                     <p><img src="/logo.svg" alt="TMP Eventos" style={{ height: '28px', width: 'auto', opacity: 0.6 }} /></p>
                 </footer>
@@ -239,8 +236,6 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
         </main>
     )
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st: Record<string, React.CSSProperties> = {
     main: {
@@ -321,8 +316,6 @@ const st: Record<string, React.CSSProperties> = {
         backgroundColor: 'var(--color-border)',
     },
     progressWrap: { width: '100%', maxWidth: '340px' },
-    progressBar: { height: '6px', backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden' },
-    progressFill: { height: '100%', backgroundColor: 'var(--color-gold)', borderRadius: '99px', transition: 'width 0.6s ease' },
     headerDivider: { width: '48px', height: '1.5px', backgroundColor: 'var(--color-gold)', opacity: 0.4, marginTop: '0.75rem' },
     tabRow: {
         display: 'flex',

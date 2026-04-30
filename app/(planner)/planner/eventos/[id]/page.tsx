@@ -11,11 +11,9 @@ export default async function PlannerEventoPage({ params }: Props) {
     const { id } = await params
     const supabase = await createServerSupabaseClient()
 
-    // Verify that the authenticated user is a planner assigned to this event
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) redirect('/login')
 
-    // Find this planner's record
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: planner } = await (supabase as any)
         .from('planners')
@@ -25,7 +23,6 @@ export default async function PlannerEventoPage({ params }: Props) {
 
     if (!planner) redirect('/planner/dashboard')
 
-    // Fetch the event
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: eventoRaw } = await (supabase as any)
         .from('eventos')
@@ -40,9 +37,10 @@ export default async function PlannerEventoPage({ params }: Props) {
       planner_id,
       planners ( nombre, email, telefono ),
       fases (
-        id, nombre, descripcion, orden,
-        tareas (
-          id, nombre, fecha, estado, tipo, resumen, completada, orden,
+        id, nombre, descripcion, fecha_inicio, fecha_fin, position,
+        temas (
+          id, nombre, descripcion, position,
+          tareas ( id, nombre, estado, position ),
           acuerdos ( id, texto, created_at )
         )
       ),
@@ -64,10 +62,12 @@ export default async function PlannerEventoPage({ params }: Props) {
         token_acceso: string; planner_id: string | null
         planners: { nombre: string; email: string; telefono: string | null } | null
         fases: {
-            id: string; nombre: string; descripcion: string | null; orden: number
-            tareas: {
-                id: string; nombre: string; fecha: string | null; estado: string
-                tipo: string | null; resumen: string | null; completada: boolean; orden: number
+            id: string; nombre: string; descripcion: string | null
+            fecha_inicio: string | null; fecha_fin: string | null; position: number
+            temas: {
+                id: string; nombre: string; descripcion: string | null
+                position: number
+                tareas: { id: string; nombre: string; estado: string; position: number }[]
                 acuerdos: { id: string; texto: string; created_at: string }[]
             }[]
         }[]
@@ -86,19 +86,25 @@ export default async function PlannerEventoPage({ params }: Props) {
     }
     const evento = eventoRaw as EventoRow | null
 
-    // If event not found OR doesn't belong to this planner → redirect (not 404)
     if (!evento || evento.planner_id !== planner.id) {
         redirect('/planner/dashboard')
     }
 
-    // Sort fases and tasks by orden, dedup
     const seenFases = new Set<string>()
     const fasesSorted = [...(evento.fases ?? [])]
-        .sort((a, b) => a.orden - b.orden)
+        .sort((a, b) => a.position - b.position)
         .filter((f) => { if (seenFases.has(f.id)) return false; seenFases.add(f.id); return true })
-    const fasesConTareas = fasesSorted.map((f) => ({
+    const fasesConTemas = fasesSorted.map((f) => ({
         ...f,
-        tareas: [...(f.tareas ?? [])].sort((a, b) => a.orden - b.orden),
+        temas: [...(f.temas ?? [])]
+            .sort((a, b) => a.position - b.position)
+            .map((t) => ({
+                ...t,
+                tareas: [...(t.tareas ?? [])].sort((a, b) => a.position - b.position),
+                acuerdos: [...(t.acuerdos ?? [])].sort(
+                    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                ),
+            })),
     }))
 
     function rubroStatusGroup(r: { estado: string; proveedor: string | null }): number {
@@ -129,7 +135,6 @@ export default async function PlannerEventoPage({ params }: Props) {
 
     return (
         <main style={styles.main}>
-            {/* Breadcrumb */}
             <div style={styles.breadcrumb}>
                 <Link href="/planner/dashboard" style={styles.breadcrumbLink}>← Mis eventos</Link>
                 <span style={styles.breadcrumbSep}>/</span>
@@ -147,7 +152,7 @@ export default async function PlannerEventoPage({ params }: Props) {
                     token_acceso: evento.token_acceso,
                     planner: plannerInfo,
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    fases: fasesConTareas as any,
+                    fases: fasesConTemas as any,
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     rubros: rubrosSorted as any,
                 }}

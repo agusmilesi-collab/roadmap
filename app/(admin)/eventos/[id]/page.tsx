@@ -18,10 +18,12 @@ interface EventoDetailRow {
     planner_id: string | null
     planners: { nombre: string; email: string; telefono: string | null } | null
     fases: {
-        id: string; nombre: string; descripcion: string | null; orden: number
-        tareas: {
-            id: string; nombre: string; fecha: string | null; estado: string
-            tipo: string | null; resumen: string | null; completada: boolean; orden: number
+        id: string; nombre: string; descripcion: string | null
+        fecha_inicio: string | null; fecha_fin: string | null; position: number
+        temas: {
+            id: string; nombre: string; descripcion: string | null
+            position: number
+            tareas: { id: string; nombre: string; estado: string; position: number }[]
             acuerdos: { id: string; texto: string; created_at: string }[]
         }[]
     }[]
@@ -57,9 +59,10 @@ export default async function EventoDetailPage({ params }: Props) {
       planner_id,
       planners ( nombre, email, telefono ),
       fases (
-        id, nombre, descripcion, orden,
-        tareas (
-          id, nombre, fecha, estado, tipo, resumen, completada, orden,
+        id, nombre, descripcion, fecha_inicio, fecha_fin, position,
+        temas (
+          id, nombre, descripcion, position,
+          tareas ( id, nombre, estado, position ),
           acuerdos ( id, texto, created_at )
         )
       ),
@@ -78,14 +81,21 @@ export default async function EventoDetailPage({ params }: Props) {
     const evento = eventoRaw as EventoDetailRow | null
     if (!evento) notFound()
 
-    // Sort fases and tasks by orden, dedup by id (guard against duplicate DB rows)
     const seenFases = new Set<string>()
     const fasesSorted = [...(evento.fases ?? [])]
-        .sort((a, b) => a.orden - b.orden)
+        .sort((a, b) => a.position - b.position)
         .filter((f) => { if (seenFases.has(f.id)) return false; seenFases.add(f.id); return true })
-    const fasesConTareas = fasesSorted.map((f) => ({
+    const fasesConTemas = fasesSorted.map((f) => ({
         ...f,
-        tareas: [...(f.tareas ?? [])].sort((a, b) => a.orden - b.orden),
+        temas: [...(f.temas ?? [])]
+            .sort((a, b) => a.position - b.position)
+            .map((t) => ({
+                ...t,
+                tareas: [...(t.tareas ?? [])].sort((a, b) => a.position - b.position),
+                acuerdos: [...(t.acuerdos ?? [])].sort(
+                    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                ),
+            })),
     }))
 
     function rubroStatusGroup(r: { estado: string; proveedor: string | null }): number {
@@ -98,11 +108,9 @@ export default async function EventoDetailPage({ params }: Props) {
     const seenRubros = new Set<string>()
     const rubrosSorted = [...(evento.rubros ?? [])]
         .sort((a, b) => {
-            // Manual order (orden > 0) takes precedence; orden = 0 = unsorted
             const ao = a.orden === 0 ? Infinity : a.orden
             const bo = b.orden === 0 ? Infinity : b.orden
             if (ao !== bo) return ao < bo ? -1 : 1
-            // Same effective orden → sort by status group, then alphabetically
             const ag = rubroStatusGroup(a), bg = rubroStatusGroup(b)
             if (ag !== bg) return ag - bg
             return a.nombre.localeCompare(b.nombre, 'es')
@@ -128,7 +136,6 @@ export default async function EventoDetailPage({ params }: Props) {
 
     return (
         <main style={styles.main}>
-            {/* Breadcrumb */}
             <div style={styles.breadcrumb}>
                 <Link href="/dashboard" style={styles.breadcrumbLink}>← Dashboard</Link>
                 <span style={styles.breadcrumbSep}>/</span>
@@ -136,7 +143,6 @@ export default async function EventoDetailPage({ params }: Props) {
             </div>
 
             <EventoDetailClient
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 evento={{
                     id: evento.id,
                     nombre: evento.nombre,
@@ -147,7 +153,7 @@ export default async function EventoDetailPage({ params }: Props) {
                     token_acceso: evento.token_acceso,
                     planner,
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    fases: fasesConTareas as any,
+                    fases: fasesConTemas as any,
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     rubros: rubrosSorted as any,
                 }}

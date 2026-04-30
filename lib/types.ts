@@ -2,7 +2,6 @@
 
 export type TipoEvento = 'boda' | 'quince' | 'cumple' | 'baby_shower'
 export type EstadoTarea = 'pendiente' | 'en_curso' | 'completada'
-export type TipoTarea = 'reunion' | 'entregable' | 'decision' | 'pago'
 export type EstadoRubro = 'pendiente' | 'en_proceso' | 'decidido' | 'señado' | 'completado'
 export type Moneda = 'USD' | 'ARS'
 
@@ -35,28 +34,38 @@ export interface Fase {
     evento_id: string
     nombre: string
     descripcion: string | null
-    orden: number
+    fecha_inicio: string | null
+    fecha_fin: string | null
+    position: number
+    created_at: string
+    // joins
+    temas?: Tema[]
+}
+
+export interface Tema {
+    id: string
+    fase_id: string
+    nombre: string
+    descripcion: string | null
+    position: number
+    created_at: string
     // joins
     tareas?: Tarea[]
+    acuerdos?: Acuerdo[]
 }
 
 export interface Tarea {
     id: string
-    fase_id: string
+    tema_id: string
     nombre: string
-    fecha: string | null
     estado: EstadoTarea
-    tipo: TipoTarea
-    resumen: string | null
-    completada: boolean
-    orden: number
-    // joins
-    acuerdos?: Acuerdo[]
+    position: number
+    created_at: string
 }
 
 export interface Acuerdo {
     id: string
-    tarea_id: string
+    tema_id: string
     texto: string
     created_at: string
 }
@@ -98,18 +107,31 @@ export interface PlantillaFase {
     tipo_evento: TipoEvento
     nombre: string
     descripcion: string | null
-    orden: number
+    meses_antes_inicio: number
+    meses_antes_fin: number
+    position: number
+    created_at: string
+    // joins
+    plantillas_temas?: PlantillaTema[]
+}
+
+export interface PlantillaTema {
+    id: string
+    plantilla_fase_id: string
+    nombre: string
+    descripcion: string | null
+    position: number
+    created_at: string
     // joins
     plantillas_tareas?: PlantillaTarea[]
 }
 
 export interface PlantillaTarea {
     id: string
-    plantilla_fase_id: string
+    plantilla_tema_id: string
     nombre: string
-    tipo: TipoTarea
-    meses_antes: number | null
-    orden: number
+    position: number
+    created_at: string
 }
 
 export interface PlantillaRubro {
@@ -126,16 +148,18 @@ export interface PlantillaRubro {
 export type Database = {
     public: {
         Tables: {
-            planners: { Row: Planner; Insert: Omit<Planner, 'id' | 'created_at'>; Update: Partial<Omit<Planner, 'id'>> }
-            eventos: { Row: Evento; Insert: Omit<Evento, 'id' | 'created_at' | 'planner'>; Update: Partial<Omit<Evento, 'id' | 'planner'>> }
-            fases: { Row: Fase; Insert: Omit<Fase, 'id' | 'tareas'>; Update: Partial<Omit<Fase, 'id' | 'tareas'>> }
-            tareas: { Row: Tarea; Insert: Omit<Tarea, 'id' | 'acuerdos'>; Update: Partial<Omit<Tarea, 'id' | 'acuerdos'>> }
-            acuerdos: { Row: Acuerdo; Insert: Omit<Acuerdo, 'id' | 'created_at'>; Update: Partial<Omit<Acuerdo, 'id'>> }
-            rubros: { Row: Rubro; Insert: Omit<Rubro, 'id' | 'pagos'>; Update: Partial<Omit<Rubro, 'id' | 'pagos'>> }
-            pagos_proveedor: { Row: PagoProveedor; Insert: Omit<PagoProveedor, 'id' | 'created_at'>; Update: Partial<Omit<PagoProveedor, 'id' | 'created_at'>> }
-            plantillas_fases: { Row: PlantillaFase; Insert: Omit<PlantillaFase, 'id' | 'plantillas_tareas'>; Update: Partial<Omit<PlantillaFase, 'id' | 'plantillas_tareas'>> }
-            plantillas_tareas: { Row: PlantillaTarea; Insert: Omit<PlantillaTarea, 'id'>; Update: Partial<Omit<PlantillaTarea, 'id'>> }
-            plantillas_rubros: { Row: PlantillaRubro; Insert: Omit<PlantillaRubro, 'id'>; Update: Partial<Omit<PlantillaRubro, 'id'>> }
+            planners:           { Row: Planner;          Insert: Omit<Planner, 'id' | 'created_at'>;                                Update: Partial<Omit<Planner, 'id'>> }
+            eventos:            { Row: Evento;           Insert: Omit<Evento, 'id' | 'created_at' | 'planner'>;                     Update: Partial<Omit<Evento, 'id' | 'planner'>> }
+            fases:              { Row: Fase;             Insert: Omit<Fase, 'id' | 'created_at' | 'temas'>;                         Update: Partial<Omit<Fase, 'id' | 'created_at' | 'temas'>> }
+            temas:              { Row: Tema;             Insert: Omit<Tema, 'id' | 'created_at' | 'tareas' | 'acuerdos'>;           Update: Partial<Omit<Tema, 'id' | 'created_at' | 'tareas' | 'acuerdos'>> }
+            tareas:             { Row: Tarea;            Insert: Omit<Tarea, 'id' | 'created_at'>;                                  Update: Partial<Omit<Tarea, 'id' | 'created_at'>> }
+            acuerdos:           { Row: Acuerdo;          Insert: Omit<Acuerdo, 'id' | 'created_at'>;                                Update: Partial<Omit<Acuerdo, 'id' | 'created_at'>> }
+            rubros:             { Row: Rubro;            Insert: Omit<Rubro, 'id' | 'pagos'>;                                       Update: Partial<Omit<Rubro, 'id' | 'pagos'>> }
+            pagos_proveedor:    { Row: PagoProveedor;    Insert: Omit<PagoProveedor, 'id' | 'created_at'>;                          Update: Partial<Omit<PagoProveedor, 'id' | 'created_at'>> }
+            plantillas_fases:   { Row: PlantillaFase;    Insert: Omit<PlantillaFase, 'id' | 'created_at' | 'plantillas_temas'>;     Update: Partial<Omit<PlantillaFase, 'id' | 'created_at' | 'plantillas_temas'>> }
+            plantillas_temas:   { Row: PlantillaTema;    Insert: Omit<PlantillaTema, 'id' | 'created_at' | 'plantillas_tareas'>;    Update: Partial<Omit<PlantillaTema, 'id' | 'created_at' | 'plantillas_tareas'>> }
+            plantillas_tareas:  { Row: PlantillaTarea;   Insert: Omit<PlantillaTarea, 'id' | 'created_at'>;                         Update: Partial<Omit<PlantillaTarea, 'id' | 'created_at'>> }
+            plantillas_rubros:  { Row: PlantillaRubro;   Insert: Omit<PlantillaRubro, 'id'>;                                        Update: Partial<Omit<PlantillaRubro, 'id'>> }
         }
         Views: Record<string, never>
         Functions: Record<string, never>

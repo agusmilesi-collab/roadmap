@@ -7,7 +7,6 @@ interface Props {
     params: Promise<{ token: string }>
 }
 
-// Generate dynamic page title
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { token } = await params
     const supabase = await createServerSupabaseClient()
@@ -33,8 +32,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     }
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
 interface EventoClienteRow {
     id: string
     nombre: string
@@ -44,11 +41,13 @@ interface EventoClienteRow {
     tipo_cambio: number | null
     planners: { nombre: string; email: string; telefono: string | null } | null
     fases: {
-        id: string; nombre: string; descripcion: string | null; orden: number
-        tareas: {
-            id: string; nombre: string; tipo: string | null; fecha: string | null
-            estado: string; completada: boolean; resumen: string | null; orden: number
-            acuerdos: { id: string; texto: string }[]
+        id: string; nombre: string; descripcion: string | null
+        fecha_inicio: string | null; fecha_fin: string | null; position: number
+        temas: {
+            id: string; nombre: string; descripcion: string | null
+            position: number
+            tareas: { id: string; nombre: string; estado: string; position: number }[]
+            acuerdos: { id: string; texto: string; created_at: string }[]
         }[]
     }[]
     rubros: {
@@ -79,10 +78,11 @@ export default async function EventoClientePage({ params }: Props) {
             tipo_cambio,
             planners ( nombre, email, telefono ),
             fases (
-                id, nombre, descripcion, orden,
-                tareas (
-                    id, nombre, tipo, fecha, estado, completada, resumen, orden,
-                    acuerdos ( id, texto )
+                id, nombre, descripcion, fecha_inicio, fecha_fin, position,
+                temas (
+                    id, nombre, descripcion, position,
+                    tareas ( id, nombre, estado, position ),
+                    acuerdos ( id, texto, created_at )
                 )
             ),
             rubros (
@@ -103,10 +103,9 @@ export default async function EventoClientePage({ params }: Props) {
         return <NotFoundPage />
     }
 
-    // ── Sort & deduplicate fases by (id) ────────────────────────────────────
     const seenFases = new Set<string>()
     const fasesSorted = [...(evento.fases ?? [])]
-        .sort((a, b) => a.orden - b.orden)
+        .sort((a, b) => a.position - b.position)
         .filter((f) => {
             if (seenFases.has(f.id)) return false
             seenFases.add(f.id)
@@ -114,7 +113,15 @@ export default async function EventoClientePage({ params }: Props) {
         })
         .map((f) => ({
             ...f,
-            tareas: [...(f.tareas ?? [])].sort((a, b) => a.orden - b.orden),
+            temas: [...(f.temas ?? [])]
+                .sort((a, b) => a.position - b.position)
+                .map((t) => ({
+                    ...t,
+                    tareas: [...(t.tareas ?? [])].sort((a, b) => a.position - b.position),
+                    acuerdos: [...(t.acuerdos ?? [])].sort(
+                        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                    ),
+                })),
         }))
 
     const seenRubros = new Set<string>()
@@ -138,7 +145,6 @@ export default async function EventoClientePage({ params }: Props) {
 
     return (
         <EventoClienteView
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             evento={{
                 id: evento.id,
                 nombre: evento.nombre,

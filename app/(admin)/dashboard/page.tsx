@@ -10,7 +10,9 @@ async function signOut() {
     redirect('/login')
 }
 
-// Local shape for Supabase query rows (avoids 'never' inference with chained .order())
+interface TareaRow { id: string; estado: string }
+interface TemaRow { id: string; tareas: TareaRow[] | null }
+interface FaseRow { nombre: string; position: number; temas: TemaRow[] | null }
 interface EventoRow {
     id: string
     nombre: string
@@ -18,13 +20,12 @@ interface EventoRow {
     fecha_evento: string
     token_acceso: string
     planners: { nombre: string } | { nombre: string }[] | null
-    fases: { nombre: string; orden: number; tareas: { id: string; completada: boolean }[] | null }[] | null
+    fases: FaseRow[] | null
 }
 
 export default async function DashboardPage() {
     const supabase = await createServerSupabaseClient()
 
-    // Fetch all eventos with nested fases → tareas for progress calculation
     const { data: eventosRaw } = await supabase
         .from('eventos')
         .select(`
@@ -36,8 +37,11 @@ export default async function DashboardPage() {
       planners ( nombre ),
       fases (
         nombre,
-        orden,
-        tareas ( id, completada )
+        position,
+        temas (
+          id,
+          tareas ( id, estado )
+        )
       )
     `)
         .order('fecha_evento', { ascending: true })
@@ -68,11 +72,11 @@ export default async function DashboardPage() {
             (fechaEvento.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
         )
 
-        const todasTareas = (e.fases ?? []).flatMap(
-            (f) => f.tareas ?? []
+        const todasTareas: TareaRow[] = (e.fases ?? []).flatMap(
+            (f) => (f.temas ?? []).flatMap((t) => t.tareas ?? [])
         )
         const totalTareas = todasTareas.length
-        const tareasCompletadas = todasTareas.filter((t) => t.completada).length
+        const tareasCompletadas = todasTareas.filter((t) => t.estado === 'completada').length
         const porcentajeAvance =
             totalTareas > 0 ? Math.round((tareasCompletadas / totalTareas) * 100) : 0
 
@@ -82,12 +86,15 @@ export default async function DashboardPage() {
                 : null
 
         const fasesStats = (e.fases ?? [])
-            .sort((a, b) => a.orden - b.orden)
-            .map((f) => ({
-                nombre: f.nombre,
-                total: (f.tareas ?? []).length,
-                completadas: (f.tareas ?? []).filter((t) => t.completada).length,
-            }))
+            .sort((a, b) => a.position - b.position)
+            .map((f) => {
+                const tareasFase = (f.temas ?? []).flatMap((t) => t.tareas ?? [])
+                return {
+                    nombre: f.nombre,
+                    total: tareasFase.length,
+                    completadas: tareasFase.filter((t) => t.estado === 'completada').length,
+                }
+            })
 
         const tipoEventoDisplay =
             e.tipo_evento.startsWith('custom_') ? customLabelByTipo.get(e.tipo_evento) ?? null : null

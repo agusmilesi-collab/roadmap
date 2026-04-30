@@ -2,88 +2,45 @@
 
 import { revalidatePath } from 'next/cache'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import type { EstadoTarea, TipoTarea, EstadoRubro, Moneda } from '@/lib/types'
+import type { EstadoTarea, EstadoRubro, Moneda } from '@/lib/types'
 
 function revalidate(eventoId: string) {
     revalidatePath(`/eventos/${eventoId}`)
+    revalidatePath(`/planner/eventos/${eventoId}`)
 }
 
 // ─── Fases ────────────────────────────────────────────────────────────────────
 
 export async function createFase(
     eventoId: string,
-    nombre: string,
-    descripcion: string
-) {
-    const supabase = await createServerSupabaseClient()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: last } = await (supabase as any)
-        .from('fases')
-        .select('orden')
-        .eq('evento_id', eventoId)
-        .order('orden', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('fases').insert({
-        evento_id: eventoId,
-        nombre,
-        descripcion: descripcion || null,
-        orden: (last?.orden ?? 0) + 1,
-    })
-    revalidate(eventoId)
-}
-
-// Insert a new fase at a specific position — shifts existing fases if inserting before one
-export async function createFaseEnPosicion(
-    eventoId: string,
-    nombre: string,
-    descripcion: string,
-    posicion: string,             // 'end' or a faseId to insert before
-    fasesOrdenadas: { id: string; orden: number }[]
+    data: { nombre: string; descripcion?: string | null; fecha_inicio?: string | null; fecha_fin?: string | null }
 ) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any
+    const { data: last } = await db
+        .from('fases')
+        .select('position')
+        .eq('evento_id', eventoId)
+        .order('position', { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
-    if (posicion === 'end') {
-        const maxOrden = fasesOrdenadas.reduce((m, f) => Math.max(m, f.orden), 0)
-        await db.from('fases').insert({
-            evento_id: eventoId,
-            nombre,
-            descripcion: descripcion || null,
-            orden: maxOrden + 1,
-        })
-    } else {
-        const target = fasesOrdenadas.find((f) => f.id === posicion)
-        if (!target) {
-            const maxOrden = fasesOrdenadas.reduce((m, f) => Math.max(m, f.orden), 0)
-            await db.from('fases').insert({
-                evento_id: eventoId, nombre,
-                descripcion: descripcion || null, orden: maxOrden + 1,
-            })
-        } else {
-            const insertOrden = target.orden
-            const fasesToShift = fasesOrdenadas.filter((f) => f.orden >= insertOrden)
-            for (const f of fasesToShift) {
-                await db.from('fases').update({ orden: f.orden + 1 }).eq('id', f.id)
-            }
-            await db.from('fases').insert({
-                evento_id: eventoId,
-                nombre,
-                descripcion: descripcion || null,
-                orden: insertOrden,
-            })
-        }
-    }
+    await db.from('fases').insert({
+        evento_id: eventoId,
+        nombre: data.nombre,
+        descripcion: data.descripcion ?? null,
+        fecha_inicio: data.fecha_inicio ?? null,
+        fecha_fin: data.fecha_fin ?? null,
+        position: (last?.position ?? 0) + 1,
+    })
     revalidate(eventoId)
 }
 
 export async function updateFase(
     id: string,
     eventoId: string,
-    data: { nombre: string; descripcion: string | null }
+    data: Partial<{ nombre: string; descripcion: string | null; fecha_inicio: string | null; fecha_fin: string | null }>
 ) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,57 +55,101 @@ export async function deleteFase(id: string, eventoId: string) {
     revalidate(eventoId)
 }
 
+// ─── Temas ────────────────────────────────────────────────────────────────────
+
+export async function createTema(
+    faseId: string,
+    eventoId: string,
+    data: { nombre: string; descripcion?: string | null }
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    const { data: last } = await db
+        .from('temas')
+        .select('position')
+        .eq('fase_id', faseId)
+        .order('position', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+    const { data: inserted } = await db.from('temas').insert({
+        fase_id: faseId,
+        nombre: data.nombre,
+        descripcion: data.descripcion ?? null,
+        position: (last?.position ?? 0) + 1,
+    }).select('id').single()
+
+    revalidate(eventoId)
+    return inserted?.id as string | undefined
+}
+
+export async function updateTema(
+    id: string,
+    eventoId: string,
+    data: Partial<{ nombre: string; descripcion: string | null }>
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('temas').update(data).eq('id', id)
+    revalidate(eventoId)
+}
+
+export async function deleteTema(id: string, eventoId: string) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('temas').delete().eq('id', id)
+    revalidate(eventoId)
+}
+
+export async function reorderTemas(
+    eventoId: string,
+    items: { id: string; position: number }[]
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    await Promise.all(items.map(({ id, position }) => db.from('temas').update({ position }).eq('id', id)))
+    revalidate(eventoId)
+}
+
 // ─── Tareas ───────────────────────────────────────────────────────────────────
 
 export async function createTarea(
-    faseId: string,
+    temaId: string,
     eventoId: string,
-    data: { nombre: string; tipo: TipoTarea; fecha?: string | null }
+    data: { nombre: string }
 ) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any
     const { data: last } = await db
         .from('tareas')
-        .select('orden')
-        .eq('fase_id', faseId)
-        .order('orden', { ascending: false })
+        .select('position')
+        .eq('tema_id', temaId)
+        .order('position', { ascending: false })
         .limit(1)
         .maybeSingle()
 
-    await db.from('tareas').insert({
-        fase_id: faseId,
+    const { data: inserted } = await db.from('tareas').insert({
+        tema_id: temaId,
         nombre: data.nombre,
-        tipo: data.tipo,
-        fecha: data.fecha ?? null,
         estado: 'pendiente' as EstadoTarea,
-        completada: false,
-        orden: (last?.orden ?? 0) + 1,
-        resumen: null,
-    })
+        position: (last?.position ?? 0) + 1,
+    }).select('id').single()
+
     revalidate(eventoId)
+    return inserted?.id as string | undefined
 }
 
 export async function updateTarea(
     id: string,
     eventoId: string,
-    data: {
-        nombre?: string
-        estado?: EstadoTarea
-        tipo?: TipoTarea
-        fecha?: string | null
-        resumen?: string | null
-        completada?: boolean
-        fase_id?: string
-    }
+    data: Partial<{ nombre: string; estado: EstadoTarea; tema_id: string }>
 ) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any
-    const update = { ...data }
-    if (update.estado === 'completada') update.completada = true
-    else if (update.estado === 'pendiente' || update.estado === 'en_curso') update.completada = false
-    await db.from('tareas').update(update).eq('id', id)
+    await (supabase as any).from('tareas').update(data).eq('id', id)
     revalidate(eventoId)
 }
 
@@ -159,33 +160,27 @@ export async function deleteTarea(id: string, eventoId: string) {
     revalidate(eventoId)
 }
 
-export async function reorderFases(eventoId: string, items: { id: string; orden: number }[]) {
+export async function reorderTareas(
+    eventoId: string,
+    items: { id: string; position: number }[]
+) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any
-    await Promise.all(items.map(({ id, orden }) => db.from('fases').update({ orden }).eq('id', id)))
+    await Promise.all(items.map(({ id, position }) => db.from('tareas').update({ position }).eq('id', id)))
     revalidate(eventoId)
 }
-
-export async function reorderTareas(eventoId: string, items: { id: string; orden: number }[]) {
-    const supabase = await createServerSupabaseClient()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any
-    await Promise.all(items.map(({ id, orden }) => db.from('tareas').update({ orden }).eq('id', id)))
-    revalidate(eventoId)
-}
-
 
 // ─── Acuerdos ─────────────────────────────────────────────────────────────────
 
 export async function createAcuerdo(
-    tareaId: string,
+    temaId: string,
     eventoId: string,
     texto: string
 ) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('acuerdos').insert({ tarea_id: tareaId, texto })
+    await (supabase as any).from('acuerdos').insert({ tema_id: temaId, texto })
     revalidate(eventoId)
 }
 
@@ -202,20 +197,12 @@ export async function createRubro(eventoId: string, nombre: string) {
     const supabase = await createServerSupabaseClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any
-    const { data: last } = await db
-        .from('rubros')
-        .select('orden')
-        .eq('evento_id', eventoId)
-        .order('orden', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
     await db.from('rubros').insert({
         evento_id: eventoId,
         nombre,
         estado: 'pendiente' as EstadoRubro,
         moneda: 'USD' as Moneda,
-        orden: 0,          // 0 = unordered; will be sorted alphabetically until user drags
+        orden: 0,
         proveedor: null,
         monto_original: null,
         sena_pct: null,
@@ -223,7 +210,6 @@ export async function createRubro(eventoId: string, nombre: string) {
         fecha_sena: null,
         notas: null,
     })
-    void last // suppress unused warning
     revalidate(eventoId)
 }
 

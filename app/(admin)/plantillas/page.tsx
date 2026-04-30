@@ -5,57 +5,78 @@ import { PlantillasClient } from '@/components/admin/PlantillasClient'
 
 export const metadata = { title: 'Plantillas — TMP Eventos' }
 
-const TIPOS_BASE = ['boda', 'quince', 'cumple', 'baby_shower'] // for buildFasesForTipo
+const TIPOS_BASE = ['boda', 'quince', 'cumple', 'baby_shower']
+
+interface PlantillaTareaRow {
+    id: string
+    nombre: string
+    position: number
+}
+interface PlantillaTemaRow {
+    id: string
+    nombre: string
+    descripcion: string | null
+    position: number
+    plantillas_tareas: PlantillaTareaRow[]
+}
+interface PlantillaFaseRow {
+    id: string
+    nombre: string
+    descripcion: string | null
+    meses_antes_inicio: number
+    meses_antes_fin: number
+    position: number
+    tipo_evento: string
+    es_custom: boolean | null
+    nombre_display: string | null
+    plantillas_temas: PlantillaTemaRow[]
+}
 
 export default async function PlantillasPage() {
     const supabase = await createServerSupabaseClient()
 
-    // Fetch all plantillas_fases with their tareas (base + custom)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: allFasesRaw } = await (supabase as any)
         .from('plantillas_fases')
         .select(`
-            id, nombre, descripcion, orden, tipo_evento, es_custom, nombre_display,
-            plantillas_tareas ( id, nombre, tipo, meses_antes, orden )
+            id, nombre, descripcion, meses_antes_inicio, meses_antes_fin, position,
+            tipo_evento, es_custom, nombre_display,
+            plantillas_temas (
+                id, nombre, descripcion, position,
+                plantillas_tareas ( id, nombre, position )
+            )
         `)
-        .order('orden')
+        .order('position')
 
-    type PlantillaFaseRow = {
-        id: string; nombre: string; descripcion: string | null
-        orden: number; tipo_evento: string
-        es_custom: boolean | null; nombre_display: string | null
-        plantillas_tareas: { id: string; nombre: string; tipo: string | null; meses_antes: number | null; orden: number }[]
-    }
     const allFases = (allFasesRaw ?? []) as PlantillaFaseRow[]
 
-    type FaseForClient = { id: string; nombre: string; descripcion: string | null; orden: number; tareas: { id: string; nombre: string; tipo: string | null; meses_antes: number | null; orden: number }[] }
-
-    function buildFasesForTipo(tipo: string): FaseForClient[] {
+    function buildFasesForTipo(tipo: string): PlantillaFaseRow[] {
         const seenKeys = new Set<string>()
         return allFases
             .filter((f) => {
                 if (f.tipo_evento !== tipo) return false
-                const key = `${f.nombre}__${f.orden}`
+                const key = `${f.nombre}__${f.position}`
                 if (seenKeys.has(key)) return false
                 seenKeys.add(key)
                 return true
             })
+            .sort((a, b) => a.position - b.position)
             .map((f) => ({
-                id: f.id,
-                nombre: f.nombre,
-                descripcion: f.descripcion,
-                orden: f.orden,
-                tareas: [...(f.plantillas_tareas ?? [])].sort((a, b) => a.orden - b.orden),
+                ...f,
+                plantillas_temas: [...(f.plantillas_temas ?? [])]
+                    .sort((a, b) => a.position - b.position)
+                    .map((t) => ({
+                        ...t,
+                        plantillas_tareas: [...(t.plantillas_tareas ?? [])].sort((a, b) => a.position - b.position),
+                    })),
             }))
     }
 
-    // Build fasesPorTipo for base tipos
-    const fasesPorTipo: Record<string, FaseForClient[]> = {}
+    const fasesPorTipo: Record<string, PlantillaFaseRow[]> = {}
     for (const tipo of TIPOS_BASE) {
         fasesPorTipo[tipo] = buildFasesForTipo(tipo)
     }
 
-    // Discover custom tipos (es_custom = true), deduplicated by tipo_evento
     const seenCustomTipos = new Set<string>()
     const customTipos: { value: string; label: string }[] = []
     for (const f of allFases) {
@@ -66,7 +87,6 @@ export default async function PlantillasPage() {
         }
     }
 
-    // Optional display names for base tipos (from nombre_display when present)
     const baseTipoDisplayNames: Record<string, string> = {}
     for (const f of allFases) {
         if (!f.es_custom && f.nombre_display && TIPOS_BASE.includes(f.tipo_evento)) {
@@ -77,7 +97,6 @@ export default async function PlantillasPage() {
     return (
         <main style={st.main}>
             <div style={st.container}>
-                {/* Header */}
                 <div style={st.header}>
                     <div style={st.headerLeft}>
                         <Link href="/dashboard" style={st.backLink}>
@@ -94,7 +113,7 @@ export default async function PlantillasPage() {
                 </div>
 
                 <p style={st.subtitle}>
-                    Editá las fases y tareas base por tipo de evento. Estos cambios se aplican solo a eventos futuros.
+                    Editá las fases, temas y tareas base por tipo de evento. Estos cambios se aplican solo a eventos futuros.
                 </p>
 
                 <Suspense fallback={<div style={{ padding: '2rem', color: 'var(--color-text-muted)' }}>Cargando…</div>}>

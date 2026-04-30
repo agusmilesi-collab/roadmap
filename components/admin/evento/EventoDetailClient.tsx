@@ -16,12 +16,16 @@ export interface Acuerdo {
 export interface Tarea {
     id: string
     nombre: string
-    fecha: string | null
     estado: string
-    tipo: string
-    resumen: string | null
-    completada: boolean
-    orden: number
+    position: number
+}
+
+export interface Tema {
+    id: string
+    nombre: string
+    descripcion: string | null
+    position: number
+    tareas: Tarea[]
     acuerdos: Acuerdo[]
 }
 
@@ -29,8 +33,10 @@ export interface Fase {
     id: string
     nombre: string
     descripcion: string | null
-    orden: number
-    tareas: Tarea[]
+    fecha_inicio: string | null
+    fecha_fin: string | null
+    position: number
+    temas: Tema[]
 }
 
 export interface PagoProveedor {
@@ -85,24 +91,36 @@ const TIPO_COLORS: Record<string, string> = {
     boda: '#C9A84C', quince: '#8A6DAE', cumple: '#4C8AC9', baby_shower: '#C96B8A',
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function tareasOfFase(f: Fase): Tarea[] {
+    return f.temas.flatMap((t) => t.tareas)
+}
+
+function isFaseVencida(fase: Fase): boolean {
+    if (!fase.fecha_fin) return false
+    const tareas = tareasOfFase(fase)
+    const total = tareas.length
+    const done = tareas.filter((t) => t.estado === 'completada').length
+    if (total > 0 && done === total) return false
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+    return new Date(fase.fecha_fin + 'T12:00:00') < hoy
+}
+
 // ─── Segmented progress bar ───────────────────────────────────────────────────
 
 function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
     if (fases.length === 0) return null
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {/* Segments row */}
             <div style={{ display: 'flex', gap: '3px', height: '6px' }}>
                 {fases.map((fase) => {
-                    const total = fase.tareas.length
-                    const done = fase.tareas.filter((t) => t.completada).length
+                    const tareas = tareasOfFase(fase)
+                    const total = tareas.length
+                    const done = tareas.filter((t) => t.estado === 'completada').length
                     const pct = total === 0 ? 0 : Math.round((done / total) * 100)
-                    const hasVencida = fase.tareas.some((t) => {
-                        if (t.completada || !t.fecha) return false
-                        const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
-                        return new Date(t.fecha + 'T12:00:00') < hoy
-                    })
-                    const bg = hasVencida
+                    const vencida = isFaseVencida(fase)
+                    const bg = vencida
                         ? '#EF4444'
                         : pct === 100
                             ? '#7C8B70'
@@ -113,7 +131,7 @@ function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
                     return (
                         <div
                             key={fase.id}
-                            title={`${fase.nombre}: ${pct}%${hasVencida ? ' ⚠ con tareas vencidas' : ''}`}
+                            title={`${fase.nombre}: ${pct}%${vencida ? ' ⚠ etapa vencida' : ''}`}
                             style={{ flex: 1, backgroundColor: trackBg, borderRadius: '99px', overflow: 'hidden', position: 'relative' }}
                         >
                             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, backgroundColor: bg, borderRadius: '99px', transition: 'width 0.3s ease, background-color 0.3s ease' }} />
@@ -121,7 +139,6 @@ function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
                     )
                 })}
             </div>
-            {/* Labels row */}
             <div style={{ display: 'flex', gap: '3px' }}>
                 {fases.map((fase) => (
                     <div
@@ -152,13 +169,11 @@ interface Props {
     evento: EventoData
     allPlanners: { id: string; nombre: string }[]
     plannerId: string | null
-    /** If false, the planner dropdown is hidden and planner_id is not changed on save. Default: true */
     canChangePlanner?: boolean
-    /** Back-link href. Default: /dashboard */
     backHref?: string
 }
 
-export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePlanner = true, backHref = '/dashboard' }: Props) {
+export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePlanner = true }: Props) {
     const [tab, setTab] = useState<'progreso' | 'presupuesto'>('progreso')
     const [editingHeader, setEditingHeader] = useState(false)
     const [editNombre, setEditNombre] = useState(evento.nombre)
@@ -190,8 +205,8 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
         (fechaEvento.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
     )
 
-    const todasTareas = evento.fases.flatMap((f) => f.tareas)
-    const completadas = todasTareas.filter((t) => t.completada).length
+    const todasTareas = evento.fases.flatMap(tareasOfFase)
+    const completadas = todasTareas.filter((t) => t.estado === 'completada').length
     const avance = todasTareas.length > 0
         ? Math.round((completadas / todasTareas.length) * 100)
         : 0
@@ -201,10 +216,8 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
 
     return (
         <div style={styles.wrapper}>
-            {/* ── Event header ─────────────────────────────────── */}
             <div className="card" style={styles.header}>
                 {editingHeader ? (
-                    /* ── Edit form ── */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                         <p style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-gold-dark)' }}>Editar evento</p>
                         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -281,7 +294,6 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                         </div>
                     </div>
                 ) : (
-                    /* ── Read-only view ── */
                     <div style={styles.headerTop}>
                         <div>
                             <span style={{ ...styles.tipoBadge, backgroundColor: tipoColor + '18', color: tipoColor, borderColor: tipoColor + '40' }}>
@@ -330,7 +342,6 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                     </div>
                 )}
 
-                {/* Segmented Progress bar — always visible */}
                 {!editingHeader && (
                     <div style={{ marginTop: '1rem' }}>
                         <SegmentedProgressBar fases={evento.fases} />
@@ -338,7 +349,6 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                 )}
             </div>
 
-            {/* ── Tabs ─────────────────────────────────────────── */}
             <div style={styles.tabs}>
                 {(['progreso', 'presupuesto'] as const).map((t) => (
                     <button
@@ -351,7 +361,6 @@ export function EventoDetailClient({ evento, allPlanners, plannerId, canChangePl
                 ))}
             </div>
 
-            {/* ── Tab content ──────────────────────────────────── */}
             {tab === 'progreso' ? (
                 <ProgresoTab fases={evento.fases} eventoId={evento.id} />
             ) : (

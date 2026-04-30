@@ -2,21 +2,13 @@
 
 import { useState, useTransition, useRef, useEffect, useMemo } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
+import { DragDropContext, Droppable, Draggable, type DropResult, type DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import {
-    updatePlantillaFase,
-    createPlantillaFase,
-    deletePlantillaFase,
-    updatePlantillaTarea,
-    createPlantillaTarea,
-    deletePlantillaTarea,
-    reorderPlantillaFases,
-    reorderPlantillaTareas,
-    createCustomPlantilla,
-    deleteCustomPlantilla,
-    updatePlantillaNombreDisplay,
-    importPlantillaCSV,
+    updatePlantillaFase, createPlantillaFase, deletePlantillaFase, reorderPlantillaFases,
+    createPlantillaTema, updatePlantillaTema, deletePlantillaTema, reorderPlantillaTemas,
+    createPlantillaTarea, updatePlantillaTarea, deletePlantillaTarea, reorderPlantillaTareas,
+    createCustomPlantilla, deleteCustomPlantilla, updatePlantillaNombreDisplay,
 } from '@/app/(admin)/plantillas/actions'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -24,17 +16,25 @@ import {
 interface PlantillaTarea {
     id: string
     nombre: string
-    tipo: string | null
-    meses_antes: number | null
-    orden: number
+    position: number
+}
+
+interface PlantillaTema {
+    id: string
+    nombre: string
+    descripcion: string | null
+    position: number
+    plantillas_tareas: PlantillaTarea[]
 }
 
 interface PlantillaFase {
     id: string
     nombre: string
     descripcion: string | null
-    orden: number
-    tareas: PlantillaTarea[]
+    meses_antes_inicio: number
+    meses_antes_fin: number
+    position: number
+    plantillas_temas: PlantillaTema[]
 }
 
 const BASE_TIPOS_EVENTO = [
@@ -43,19 +43,20 @@ const BASE_TIPOS_EVENTO = [
     { value: 'cumple', defaultLabel: '🎂 Cumpleaños' },
     { value: 'baby_shower', defaultLabel: '🍼 Baby Shower' },
 ]
+const TIPOS_BASE = ['boda', 'quince', 'cumple', 'baby_shower']
+
+function computePosition(items: { position: number }[], destIdx: number): number {
+    if (items.length === 0) return 1
+    if (destIdx <= 0) return items[0].position / 2
+    if (destIdx >= items.length) return items[items.length - 1].position + 1
+    return (items[destIdx - 1].position + items[destIdx].position) / 2
+}
 
 // ─── Custom plantillas dropdown ────────────────────────────────────────────────
 
 function CustomDropdown({
-    customTipos,
-    tipoActivo,
-    isCustomSelected,
-    open,
-    onToggle,
-    onClose,
-    onSelect,
-    onEdit,
-    onDelete,
+    customTipos, tipoActivo, isCustomSelected, open,
+    onToggle, onClose, onSelect, onEdit, onDelete,
 }: {
     customTipos: { value: string; label: string }[]
     tipoActivo: string
@@ -132,16 +133,7 @@ function CustomDropdown({
     )
 }
 
-const TIPOS_TAREA = ['reunion', 'entregable', 'decision']
-const TIPO_LABELS: Record<string, string> = {
-    reunion: '💬 Reunión',
-    entregable: '📦 Entregable',
-    decision: '⚡ Decisión',
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
-
-const TIPOS_BASE = ['boda', 'quince', 'cumple', 'baby_shower']
 
 export function PlantillasClient({
     fasesPorTipo,
@@ -168,7 +160,6 @@ export function PlantillasClient({
     const [showNewModal, setShowNewModal] = useState(false)
     const [newNombre, setNewNombre] = useState('')
     const [creating, setCreating] = useState(false)
-    const [showCsvModal, setShowCsvModal] = useState(false)
     const [localCustomTipos, setLocalCustomTipos] = useState(customTipos)
     const [confirmDeleteCustom, setConfirmDeleteCustom] = useState<string | null>(null)
     const [editingTipo, setEditingTipo] = useState<string | null>(null)
@@ -207,7 +198,6 @@ export function PlantillasClient({
             setGlobalError(res.error)
             return
         }
-        // Action redirects on success; if no redirect (edge case), close editor
         setEditingTipo(null)
     }
 
@@ -222,12 +212,7 @@ export function PlantillasClient({
         } else {
             setShowNewModal(false)
             setNewNombre('')
-            // Action redirects on success to new plantilla
         }
-    }
-
-    async function handleDeleteCustom(tipo: string) {
-        setConfirmDeleteCustom(tipo)
     }
 
     async function executeDeleteCustom() {
@@ -239,11 +224,8 @@ export function PlantillasClient({
             setGlobalError(res.error)
         } else {
             setLocalCustomTipos((prev) => prev.filter((t) => t.value !== tipo))
-            // Action redirects to /plantillas?tipo=boda on success
         }
     }
-
-    // ── Drag end handler ──────────────────────────────────────────────────────
 
     function handleDragEnd(result: DropResult) {
         const { destination, source, type } = result
@@ -251,71 +233,64 @@ export function PlantillasClient({
         if (destination.droppableId === source.droppableId && destination.index === source.index) return
 
         if (type === 'FASE') {
-            // Reorder fases
             const reordered = Array.from(fases)
             const [moved] = reordered.splice(source.index, 1)
-            reordered.splice(destination.index, 0, moved)
-
-            // Optimistic update
-            const withNewOrden = reordered.map((f, i) => ({ ...f, orden: i + 1 }))
-            setFases(withNewOrden)
-
-            // Persist to DB
+            const otros = reordered
+            const newPos = computePosition(otros, destination.index)
+            reordered.splice(destination.index, 0, { ...moved, position: newPos })
+            setFases(reordered)
             startReorder(async () => {
-                const res = await reorderPlantillaFases(withNewOrden.map((f) => ({ id: f.id, orden: f.orden })))
+                const res = await reorderPlantillaFases([{ id: moved.id, position: newPos }])
                 if (res?.error) setGlobalError(res.error)
             })
-        } else if (type === 'TAREA') {
-            // source.droppableId = faseId
+        } else if (type.startsWith('TEMA_')) {
             const faseId = source.droppableId
+            if (destination.droppableId !== faseId) return
             const faseIdx = fases.findIndex((f) => f.id === faseId)
             if (faseIdx === -1) return
-
             const fase = fases[faseIdx]
-            const tareas = Array.from(fase.tareas)
-            const [moved] = tareas.splice(source.index, 1)
-            tareas.splice(destination.index, 0, moved)
-
-            const tareasConOrden = tareas.map((t, i) => ({ ...t, orden: i + 1 }))
-
-            const newFases = [...fases]
-            newFases[faseIdx] = { ...fase, tareas: tareasConOrden }
-            setFases(newFases)
-
+            const temas = Array.from(fase.plantillas_temas)
+            const [moved] = temas.splice(source.index, 1)
+            const newPos = computePosition(temas, destination.index)
+            temas.splice(destination.index, 0, { ...moved, position: newPos })
+            const next = [...fases]
+            next[faseIdx] = { ...fase, plantillas_temas: temas }
+            setFases(next)
             startReorder(async () => {
-                const res = await reorderPlantillaTareas(tareasConOrden.map((t) => ({ id: t.id, orden: t.orden })))
+                const res = await reorderPlantillaTemas([{ id: moved.id, position: newPos }])
                 if (res?.error) setGlobalError(res.error)
             })
+        } else if (type.startsWith('TAREA_')) {
+            const temaId = source.droppableId
+            if (destination.droppableId !== temaId) return
+            for (let fi = 0; fi < fases.length; fi++) {
+                const fase = fases[fi]
+                const ti = fase.plantillas_temas.findIndex((t) => t.id === temaId)
+                if (ti === -1) continue
+                const tema = fase.plantillas_temas[ti]
+                const tareas = Array.from(tema.plantillas_tareas)
+                const [moved] = tareas.splice(source.index, 1)
+                const newPos = computePosition(tareas, destination.index)
+                tareas.splice(destination.index, 0, { ...moved, position: newPos })
+                const newTemas = [...fase.plantillas_temas]
+                newTemas[ti] = { ...tema, plantillas_tareas: tareas }
+                const next = [...fases]
+                next[fi] = { ...fase, plantillas_temas: newTemas }
+                setFases(next)
+                startReorder(async () => {
+                    const res = await reorderPlantillaTareas([{ id: moved.id, position: newPos }])
+                    if (res?.error) setGlobalError(res.error)
+                })
+                return
+            }
         }
-    }
-
-    // ── Inline tarea updater (to avoid full reload for tarea changes) ──────────
-
-    function updateTareaInState(faseId: string, tareaId: string, patch: Partial<PlantillaTarea>) {
-        setFases((prev) =>
-            prev.map((f) =>
-                f.id !== faseId
-                    ? f
-                    : { ...f, tareas: f.tareas.map((t) => (t.id === tareaId ? { ...t, ...patch } : t)) }
-            )
-        )
-    }
-
-    function removeTareaFromState(faseId: string, tareaId: string) {
-        setFases((prev) =>
-            prev.map((f) =>
-                f.id !== faseId ? f : { ...f, tareas: f.tareas.filter((t) => t.id !== tareaId) }
-            )
-        )
     }
 
     return (
         <div style={st.wrapper}>
             {globalError && <div className="alert-error">{globalError}</div>}
 
-            {/* Type selector — base pills + custom dropdown + Nueva */}
             <div className="plantillas-tabs-row" role="tablist">
-                {/* Base plantillas — always visible pills */}
                 {BASE_TIPOS_EVENTO.map((t) => {
                     const label = getBaseTipoLabel(t.value)
                     const isActive = tipoActivo === t.value
@@ -341,7 +316,6 @@ export function PlantillasClient({
                     )
                 })}
 
-                {/* Custom plantillas — dropdown "Mis plantillas ▾" */}
                 {localCustomTipos.length > 0 && (
                     <CustomDropdown
                         customTipos={localCustomTipos}
@@ -352,11 +326,10 @@ export function PlantillasClient({
                         onClose={() => setCustomDropdownOpen(false)}
                         onSelect={(tipo) => { changeTipo(tipo); setCustomDropdownOpen(false) }}
                         onEdit={(t) => { setCustomDropdownOpen(false); startEditingTipo(t.value, t.label) }}
-                        onDelete={(t) => { setCustomDropdownOpen(false); handleDeleteCustom(t.value) }}
+                        onDelete={(t) => { setCustomDropdownOpen(false); setConfirmDeleteCustom(t.value) }}
                     />
                 )}
 
-                {/* Nueva — always visible */}
                 <div
                     role="tab"
                     className="plantilla-tab-pill plantilla-tab-pill--new"
@@ -364,19 +337,8 @@ export function PlantillasClient({
                 >
                     + Nueva
                 </div>
-
-                {/* Importar CSV */}
-                <div
-                    role="button"
-                    className="plantilla-tab-pill plantilla-tab-pill--csv"
-                    onClick={() => { setShowCsvModal(true); setCustomDropdownOpen(false) }}
-                    title="Importar plantilla desde CSV"
-                >
-                    ↑ CSV
-                </div>
             </div>
 
-            {/* Inline editor for plantilla name */}
             {editingTipo && (
                 <div style={st.renameRow}>
                     <input
@@ -407,7 +369,6 @@ export function PlantillasClient({
                 </div>
             )}
 
-            {/* New template modal */}
             {showNewModal && (
                 <div style={st.modalOverlay} onClick={() => setShowNewModal(false)}>
                     <div style={st.modal} onClick={(e) => e.stopPropagation()}>
@@ -430,7 +391,7 @@ export function PlantillasClient({
                                 onClick={() => { setShowNewModal(false); setNewNombre('') }}
                             >Cancelar</button>
                             <button
-                                className="btn-primary"
+                                className="btn-gold"
                                 onClick={handleCreateCustom}
                                 disabled={creating || !newNombre.trim()}
                             >{creating ? 'Creando…' : 'Crear plantilla'}</button>
@@ -439,34 +400,17 @@ export function PlantillasClient({
                 </div>
             )}
 
-            {/* CSV import modal */}
-            {showCsvModal && (
-                <CsvImportModal
-                    onClose={() => setShowCsvModal(false)}
-                    onImported={(tipo_evento) => {
-                        setShowCsvModal(false)
-                        router.push(`/plantillas?tipo=${encodeURIComponent(tipo_evento)}`)
-                    }}
-                />
-            )}
-
-            {/* Info banner */}
             <div style={st.infoBanner}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
-                Los cambios aquí solo afectan eventos futuros. Podés arrastrar las fases y tareas para reordenarlas.
+                Los cambios aquí solo afectan eventos futuros. Podés arrastrar fases, temas y tareas para reordenarlos.
             </div>
 
-            {/* Fases — draggable */}
             <DragDropContext onDragEnd={handleDragEnd}>
                 <Droppable droppableId="fases-list" type="FASE">
                     {(provided) => (
-                        <div
-                            ref={provided.innerRef}
-                            {...provided.droppableProps}
-                            style={st.fasesList}
-                        >
+                        <div ref={provided.innerRef} {...provided.droppableProps} style={st.fasesList}>
                             {fases.length === 0 && (
                                 <div className="card" style={st.emptyFases}>
                                     <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>No hay fases para este tipo de evento. Agregá la primera.</p>
@@ -489,8 +433,6 @@ export function PlantillasClient({
                                                 tipoEvento={tipoActivo}
                                                 dragHandleProps={drag.dragHandleProps}
                                                 onError={setGlobalError}
-                                                onTareaUpdate={(tareaId, patch) => updateTareaInState(fase.id, tareaId, patch)}
-                                                onTareaRemove={(tareaId) => removeTareaFromState(fase.id, tareaId)}
                                             />
                                         </div>
                                     )}
@@ -502,17 +444,12 @@ export function PlantillasClient({
                 </Droppable>
             </DragDropContext>
 
-            {/* Add fase */}
-            <AddFaseForm
-                tipoEvento={tipoActivo}
-                onError={setGlobalError}
-            />
+            <AddFaseForm tipoEvento={tipoActivo} onError={setGlobalError} />
 
-            {/* Confirm delete custom plantilla modal */}
             <ConfirmModal
                 isOpen={confirmDeleteCustom !== null}
                 title="¿Eliminar plantilla?"
-                message="Esta acción eliminará todas las fases y tareas asociadas. No se puede deshacer."
+                message="Esta acción eliminará todas las fases, temas y tareas asociadas. No se puede deshacer."
                 confirmLabel="Eliminar"
                 danger
                 onConfirm={executeDeleteCustom}
@@ -525,37 +462,37 @@ export function PlantillasClient({
 // ─── FaseEditor ───────────────────────────────────────────────────────────────
 
 function FaseEditor({
-    fase,
-    tipoEvento,
-    dragHandleProps,
-    onError,
-    onTareaUpdate,
-    onTareaRemove,
+    fase, tipoEvento, dragHandleProps, onError,
 }: {
     fase: PlantillaFase
     tipoEvento: string
-    dragHandleProps: React.HTMLAttributes<HTMLElement> | null | undefined
+    dragHandleProps: DraggableProvidedDragHandleProps | null | undefined
     onError: (e: string) => void
-    onTareaUpdate: (tareaId: string, patch: Partial<PlantillaTarea>) => void
-    onTareaRemove: (tareaId: string) => void
 }) {
     const [editingFase, setEditingFase] = useState(false)
     const [nombre, setNombre] = useState(fase.nombre)
     const [descripcion, setDescripcion] = useState(fase.descripcion ?? '')
+    const [mesesInicio, setMesesInicio] = useState(String(fase.meses_antes_inicio))
+    const [mesesFin, setMesesFin] = useState(String(fase.meses_antes_fin))
     const [isPending, startTransition] = useTransition()
     const [showDeleteModal, setShowDeleteModal] = useState(false)
+    const [showAddTema, setShowAddTema] = useState(false)
 
     function saveFase() {
         startTransition(async () => {
-            const res = await updatePlantillaFase(fase.id, { nombre, descripcion: descripcion || undefined }, tipoEvento)
+            const res = await updatePlantillaFase(
+                fase.id,
+                {
+                    nombre,
+                    descripcion: descripcion || null,
+                    meses_antes_inicio: parseInt(mesesInicio) || 0,
+                    meses_antes_fin: parseInt(mesesFin) || 0,
+                },
+                tipoEvento
+            )
             if (res?.error) onError(res.error)
             else setEditingFase(false)
-            // On success, action redirects
         })
-    }
-
-    function handleDelete() {
-        setShowDeleteModal(true)
     }
 
     function executeDelete() {
@@ -563,20 +500,13 @@ function FaseEditor({
         startTransition(async () => {
             const res = await deletePlantillaFase(fase.id, tipoEvento)
             if (res?.error) onError(res.error)
-            // On success, action redirects
         })
     }
 
     return (
         <div className="card" style={st.faseCard}>
-            {/* Fase header */}
             <div style={st.faseHeader}>
-                {/* Drag handle */}
-                <div
-                    {...(dragHandleProps ?? {})}
-                    style={st.dragHandle}
-                    title="Arrastrar para reordenar"
-                >
+                <div {...(dragHandleProps ?? {})} style={st.dragHandle} title="Arrastrar para reordenar">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity="0.4">
                         <circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" />
                         <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
@@ -591,7 +521,7 @@ function FaseEditor({
                             value={nombre}
                             onChange={(e) => setNombre(e.target.value)}
                             placeholder="Nombre de la fase"
-                            style={{ fontSize: '0.9rem' }}
+                            style={{ fontSize: '0.95rem' }}
                         />
                         <input
                             className="form-input"
@@ -600,6 +530,26 @@ function FaseEditor({
                             placeholder="Descripción (opcional)"
                             style={{ fontSize: '0.85rem' }}
                         />
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <label style={st.tinyLabel}>Empieza:</label>
+                            <input
+                                className="form-input"
+                                type="number"
+                                value={mesesInicio}
+                                onChange={(e) => setMesesInicio(e.target.value)}
+                                style={{ width: '70px', fontSize: '0.82rem', padding: '0.35rem 0.5rem' }}
+                            />
+                            <span style={st.tinyHint}>meses antes</span>
+                            <label style={st.tinyLabel}>Termina:</label>
+                            <input
+                                className="form-input"
+                                type="number"
+                                value={mesesFin}
+                                onChange={(e) => setMesesFin(e.target.value)}
+                                style={{ width: '70px', fontSize: '0.82rem', padding: '0.35rem 0.5rem' }}
+                            />
+                            <span style={st.tinyHint}>meses antes</span>
+                        </div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <button className="btn-ghost" style={st.smallBtn} onClick={() => setEditingFase(false)}>Cancelar</button>
                             <button className="btn-gold" style={st.smallBtn} onClick={saveFase} disabled={isPending}>
@@ -612,13 +562,16 @@ function FaseEditor({
                         <div style={{ flex: 1 }}>
                             <p style={st.faseNombre}>{fase.nombre}</p>
                             {fase.descripcion && <p style={st.faseDesc}>{fase.descripcion}</p>}
+                            <p style={st.faseMeses}>
+                                {fase.meses_antes_inicio}m → {fase.meses_antes_fin}m antes del evento
+                            </p>
                         </div>
                         <div style={{ display: 'flex', gap: '0.4rem' }}>
                             <button className="btn-ghost" style={st.smallBtn} onClick={() => setEditingFase(true)}>Editar</button>
                             <button
                                 className="btn-ghost"
                                 style={{ ...st.smallBtn, color: 'var(--color-error)', borderColor: 'rgba(200,75,75,0.2)' }}
-                                onClick={handleDelete}
+                                onClick={() => setShowDeleteModal(true)}
                                 disabled={isPending}
                             >
                                 Eliminar
@@ -628,17 +581,141 @@ function FaseEditor({
                 )}
             </div>
 
-            {/* Tareas — draggable within phase */}
-            <div style={st.tareasSection}>
-                <p style={st.tareasLabel}>Tareas ({fase.tareas.length})</p>
-                <Droppable droppableId={fase.id} type="TAREA">
+            <div style={st.temasSection}>
+                <p style={st.tareasLabel}>Temas ({fase.plantillas_temas.length})</p>
+                <Droppable droppableId={fase.id} type={`TEMA_${fase.id}`}>
                     {(provided) => (
-                        <div
-                            ref={provided.innerRef}
-                            {...provided.droppableProps}
-                            style={st.tareasList}
+                        <div ref={provided.innerRef} {...provided.droppableProps} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {fase.plantillas_temas.map((tema, idx) => (
+                                <Draggable key={tema.id} draggableId={tema.id} index={idx}>
+                                    {(drag, snapshot) => (
+                                        <div
+                                            ref={drag.innerRef}
+                                            {...drag.draggableProps}
+                                            style={{
+                                                ...drag.draggableProps.style,
+                                                opacity: snapshot.isDragging ? 0.85 : 1,
+                                            }}
+                                        >
+                                            <TemaEditor
+                                                tema={tema}
+                                                tipoEvento={tipoEvento}
+                                                dragHandleProps={drag.dragHandleProps}
+                                                onError={onError}
+                                            />
+                                        </div>
+                                    )}
+                                </Draggable>
+                            ))}
+                            {provided.placeholder}
+                        </div>
+                    )}
+                </Droppable>
+                {showAddTema ? (
+                    <AddTemaForm faseId={fase.id} tipoEvento={tipoEvento} onError={onError} onDone={() => setShowAddTema(false)} />
+                ) : (
+                    <button className="btn-ghost" style={{ ...st.smallBtn, alignSelf: 'flex-start', marginTop: '0.5rem' }} onClick={() => setShowAddTema(true)}>
+                        + Agregar tema
+                    </button>
+                )}
+            </div>
+
+            <ConfirmModal
+                isOpen={showDeleteModal}
+                title="¿Eliminar fase?"
+                message={`Se eliminarán la fase "${fase.nombre}" y todos sus temas y tareas. Esta acción no se puede deshacer.`}
+                confirmLabel="Eliminar"
+                danger
+                onConfirm={executeDelete}
+                onCancel={() => setShowDeleteModal(false)}
+            />
+        </div>
+    )
+}
+
+// ─── TemaEditor ──────────────────────────────────────────────────────────────
+
+function TemaEditor({
+    tema, tipoEvento, dragHandleProps, onError,
+}: {
+    tema: PlantillaTema
+    tipoEvento: string
+    dragHandleProps: DraggableProvidedDragHandleProps | null | undefined
+    onError: (e: string) => void
+}) {
+    const [editing, setEditing] = useState(false)
+    const [nombre, setNombre] = useState(tema.nombre)
+    const [descripcion, setDescripcion] = useState(tema.descripcion ?? '')
+    const [showAddTarea, setShowAddTarea] = useState(false)
+    const [isPending, startTransition] = useTransition()
+
+    function save() {
+        startTransition(async () => {
+            const res = await updatePlantillaTema(
+                tema.id,
+                {
+                    nombre,
+                    descripcion: descripcion || null,
+                },
+                tipoEvento
+            )
+            if (res?.error) onError(res.error)
+            else setEditing(false)
+        })
+    }
+
+    function handleDelete() {
+        startTransition(async () => {
+            const res = await deletePlantillaTema(tema.id, tipoEvento)
+            if (res?.error) onError(res.error)
+        })
+    }
+
+    return (
+        <div style={st.temaCard}>
+            <div style={st.temaHeader}>
+                <div {...(dragHandleProps ?? {})} style={st.dragHandleSm} title="Arrastrar para reordenar">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" opacity="0.35">
+                        <circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" />
+                        <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+                        <circle cx="9" cy="19" r="1.5" /><circle cx="15" cy="19" r="1.5" />
+                    </svg>
+                </div>
+                {editing ? (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <input className="form-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del tema" style={{ fontSize: '0.9rem' }} />
+                        <input className="form-input" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Descripción (opcional)" style={{ fontSize: '0.85rem' }} />
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button className="btn-ghost" style={st.smallBtn} onClick={() => setEditing(false)}>Cancelar</button>
+                            <button className="btn-gold" style={st.smallBtn} onClick={save} disabled={isPending}>
+                                {isPending ? '...' : 'Guardar tema'}
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <div style={{ flex: 1 }}>
+                            <p style={st.temaNombre}>{tema.nombre}</p>
+                            {tema.descripcion && <p style={st.temaDesc}>{tema.descripcion}</p>}
+                        </div>
+                        <button className="btn-ghost" style={st.smallBtn} onClick={() => setEditing(true)}>Editar</button>
+                        <button
+                            className="btn-ghost"
+                            style={{ ...st.smallBtn, color: 'var(--color-error)', borderColor: 'rgba(200,75,75,0.2)' }}
+                            onClick={handleDelete}
+                            disabled={isPending}
                         >
-                            {fase.tareas.map((t, idx) => (
+                            ✕
+                        </button>
+                    </>
+                )}
+            </div>
+
+            <div style={st.tareasInTema}>
+                <Droppable droppableId={tema.id} type={`TAREA_${tema.id}`}>
+                    {(provided) => (
+                        <div ref={provided.innerRef} {...provided.droppableProps} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                            {tema.plantillas_tareas.map((t, idx) => (
                                 <Draggable key={t.id} draggableId={t.id} index={idx}>
                                     {(drag, snapshot) => (
                                         <div
@@ -654,8 +731,6 @@ function FaseEditor({
                                                 tipoEvento={tipoEvento}
                                                 dragHandleProps={drag.dragHandleProps}
                                                 onError={onError}
-                                                onUpdated={(patch) => onTareaUpdate(t.id, patch)}
-                                                onRemoved={() => onTareaRemove(t.id)}
                                             />
                                         </div>
                                     )}
@@ -665,19 +740,14 @@ function FaseEditor({
                         </div>
                     )}
                 </Droppable>
-                <AddTareaForm faseId={fase.id} tipoEvento={tipoEvento} onError={onError} />
+                {showAddTarea ? (
+                    <AddTareaForm temaId={tema.id} tipoEvento={tipoEvento} onError={onError} onDone={() => setShowAddTarea(false)} />
+                ) : (
+                    <button className="btn-ghost" style={{ ...st.smallBtn, alignSelf: 'flex-start', marginTop: '0.4rem' }} onClick={() => setShowAddTarea(true)}>
+                        + Agregar tarea
+                    </button>
+                )}
             </div>
-
-            {/* Confirm delete fase modal */}
-            <ConfirmModal
-                isOpen={showDeleteModal}
-                title="¿Eliminar fase?"
-                message={`Se eliminarán la fase "${fase.nombre}" y todas sus tareas. Esta acción no se puede deshacer.`}
-                confirmLabel="Eliminar"
-                danger
-                onConfirm={executeDelete}
-                onCancel={() => setShowDeleteModal(false)}
-            />
         </div>
     )
 }
@@ -685,33 +755,22 @@ function FaseEditor({
 // ─── TareaEditor ──────────────────────────────────────────────────────────────
 
 function TareaEditor({
-    tarea: t,
-    tipoEvento,
-    dragHandleProps,
-    onError,
-    onUpdated,
-    onRemoved,
+    tarea: t, tipoEvento, dragHandleProps, onError,
 }: {
     tarea: PlantillaTarea
     tipoEvento: string
-    dragHandleProps: React.HTMLAttributes<HTMLElement> | null | undefined
+    dragHandleProps: DraggableProvidedDragHandleProps | null | undefined
     onError: (e: string) => void
-    onUpdated: (patch: Partial<PlantillaTarea>) => void
-    onRemoved: () => void
 }) {
     const [editing, setEditing] = useState(false)
     const [nombre, setNombre] = useState(t.nombre)
-    const [tipo, setTipo] = useState(t.tipo ?? 'decision')
-    const [meses, setMeses] = useState(t.meses_antes?.toString() ?? '')
     const [isPending, startTransition] = useTransition()
 
     function save() {
         startTransition(async () => {
-            const mesesVal = meses !== '' ? parseInt(meses) : null
-            const res = await updatePlantillaTarea(t.id, { nombre, tipo, meses_antes: mesesVal }, tipoEvento)
+            const res = await updatePlantillaTarea(t.id, { nombre }, tipoEvento)
             if (res?.error) onError(res.error)
-            else { setEditing(false); onUpdated({ nombre, tipo, meses_antes: mesesVal }) }
-            // On success, action redirects (inline update is optimistic for UX)
+            else setEditing(false)
         })
     }
 
@@ -719,33 +778,18 @@ function TareaEditor({
         startTransition(async () => {
             const res = await deletePlantillaTarea(t.id, tipoEvento)
             if (res?.error) onError(res.error)
-            else onRemoved()
-            // On success, action redirects
         })
     }
 
     if (editing) {
         return (
             <div style={st.tareaEditorRow}>
-                <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="form-input" style={{ width: '130px', fontSize: '0.78rem', padding: '0.35rem 0.5rem' }}>
-                    {TIPOS_TAREA.map((tp) => (
-                        <option key={tp} value={tp}>{TIPO_LABELS[tp]}</option>
-                    ))}
-                </select>
                 <input
                     className="form-input"
                     value={nombre}
                     onChange={(e) => setNombre(e.target.value)}
                     placeholder="Nombre de la tarea"
                     style={{ flex: 1, fontSize: '0.85rem' }}
-                />
-                <input
-                    className="form-input"
-                    type="number"
-                    value={meses}
-                    onChange={(e) => setMeses(e.target.value)}
-                    placeholder="días antes"
-                    style={{ width: '90px', fontSize: '0.78rem', padding: '0.35rem 0.5rem' }}
                 />
                 <button className="btn-ghost" style={st.smallBtn} onClick={() => setEditing(false)}>✕</button>
                 <button className="btn-gold" style={st.smallBtn} onClick={save} disabled={isPending}>
@@ -757,23 +801,14 @@ function TareaEditor({
 
     return (
         <div style={st.tareaRow}>
-            {/* Drag handle */}
-            <div
-                {...(dragHandleProps ?? {})}
-                style={st.dragHandleSm}
-                title="Arrastrar para reordenar"
-            >
+            <div {...(dragHandleProps ?? {})} style={st.dragHandleSm} title="Arrastrar">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" opacity="0.35">
                     <circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" />
                     <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
                     <circle cx="9" cy="19" r="1.5" /><circle cx="15" cy="19" r="1.5" />
                 </svg>
             </div>
-            <span style={st.tipoChip}>{TIPO_LABELS[t.tipo ?? ''] ?? '•'}</span>
             <span style={{ flex: 1, fontSize: '0.85rem' }}>{t.nombre}</span>
-            {t.meses_antes !== null && (
-                <span style={st.mesesChip}>{t.meses_antes}d antes</span>
-            )}
             <button className="btn-ghost" style={st.iconBtn} onClick={() => setEditing(true)}>✏</button>
             <button
                 className="btn-ghost"
@@ -785,63 +820,28 @@ function TareaEditor({
     )
 }
 
-// ─── AddTareaForm ─────────────────────────────────────────────────────────────
-
-function AddTareaForm({ faseId, tipoEvento, onError }: { faseId: string; tipoEvento: string; onError: (e: string) => void }) {
-    const [show, setShow] = useState(false)
-    const [nombre, setNombre] = useState('')
-    const [tipo, setTipo] = useState('decision')
-    const [meses, setMeses] = useState('')
-    const [isPending, startTransition] = useTransition()
-
-    function submit() {
-        if (!nombre.trim()) return
-        startTransition(async () => {
-            const res = await createPlantillaTarea(faseId, nombre.trim(), tipo, meses !== '' ? parseInt(meses) : null, tipoEvento)
-            if (res?.error) onError(res.error)
-            else { setNombre(''); setMeses(''); setShow(false) }
-            // On success, action redirects
-        })
-    }
-
-    if (!show) {
-        return (
-            <button className="btn-ghost" style={{ ...st.smallBtn, alignSelf: 'flex-start', marginTop: '0.5rem' }} onClick={() => setShow(true)}>
-                + Agregar tarea
-            </button>
-        )
-    }
-
-    return (
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-            <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="form-input" style={{ width: '130px', fontSize: '0.78rem', padding: '0.35rem 0.5rem' }}>
-                {TIPOS_TAREA.map((tp) => <option key={tp} value={tp}>{TIPO_LABELS[tp]}</option>)}
-            </select>
-            <input className="form-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre de la tarea" style={{ flex: 1, minWidth: '150px', fontSize: '0.85rem' }} />
-            <input className="form-input" type="number" value={meses} onChange={(e) => setMeses(e.target.value)} placeholder="días antes" style={{ width: '90px', fontSize: '0.78rem', padding: '0.35rem 0.5rem' }} />
-            <button className="btn-ghost" style={st.smallBtn} onClick={() => setShow(false)}>Cancelar</button>
-            <button className="btn-gold" style={st.smallBtn} onClick={submit} disabled={isPending || !nombre.trim()}>
-                {isPending ? '...' : 'Agregar'}
-            </button>
-        </div>
-    )
-}
-
-// ─── AddFaseForm ──────────────────────────────────────────────────────────────
+// ─── Add forms ────────────────────────────────────────────────────────────────
 
 function AddFaseForm({ tipoEvento, onError }: { tipoEvento: string; onError: (e: string) => void }) {
     const [show, setShow] = useState(false)
     const [nombre, setNombre] = useState('')
     const [descripcion, setDescripcion] = useState('')
+    const [mesesInicio, setMesesInicio] = useState('6')
+    const [mesesFin, setMesesFin] = useState('3')
     const [isPending, startTransition] = useTransition()
 
     function submit() {
         if (!nombre.trim()) return
         startTransition(async () => {
-            const res = await createPlantillaFase(tipoEvento, nombre.trim(), descripcion.trim())
+            const res = await createPlantillaFase(
+                tipoEvento,
+                nombre.trim(),
+                descripcion.trim(),
+                parseInt(mesesInicio) || 0,
+                parseInt(mesesFin) || 0,
+            )
             if (res?.error) onError(res.error)
             else { setNombre(''); setDescripcion(''); setShow(false) }
-            // On success, action redirects
         })
     }
 
@@ -859,6 +859,14 @@ function AddFaseForm({ tipoEvento, onError }: { tipoEvento: string; onError: (e:
             <p style={st.faseNombre}>Nueva fase</p>
             <input className="form-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre de la fase" />
             <input className="form-input" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Descripción (opcional)" />
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <label style={st.tinyLabel}>Empieza:</label>
+                <input className="form-input" type="number" value={mesesInicio} onChange={(e) => setMesesInicio(e.target.value)} style={{ width: '70px', fontSize: '0.82rem', padding: '0.35rem 0.5rem' }} />
+                <span style={st.tinyHint}>meses antes</span>
+                <label style={st.tinyLabel}>Termina:</label>
+                <input className="form-input" type="number" value={mesesFin} onChange={(e) => setMesesFin(e.target.value)} style={{ width: '70px', fontSize: '0.82rem', padding: '0.35rem 0.5rem' }} />
+                <span style={st.tinyHint}>meses antes</span>
+            </div>
             <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                 <button className="btn-ghost" onClick={() => setShow(false)}>Cancelar</button>
                 <button className="btn-gold" onClick={submit} disabled={isPending || !nombre.trim()}>
@@ -869,246 +877,75 @@ function AddFaseForm({ tipoEvento, onError }: { tipoEvento: string; onError: (e:
     )
 }
 
-// ─── CsvImportModal ───────────────────────────────────────────────────────────
+function AddTemaForm({ faseId, tipoEvento, onError, onDone }: { faseId: string; tipoEvento: string; onError: (e: string) => void; onDone: () => void }) {
+    const [nombre, setNombre] = useState('')
+    const [descripcion, setDescripcion] = useState('')
+    const [isPending, startTransition] = useTransition()
 
-interface CsvParsedTarea {
-    nombre: string
-    tipo: string
-    diasAntes: number | null
-    orden: number
-}
-
-interface CsvParsedFase {
-    nombre: string
-    descripcion: string | null
-    orden: number
-    tareas: CsvParsedTarea[]
-}
-
-const VALID_TIPOS = ['reunion', 'entregable', 'decision', 'pago']
-
-function parseCsvText(text: string): CsvParsedFase[] {
-    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
-    if (lines.length < 2) throw new Error('El archivo está vacío o solo tiene el encabezado')
-
-    const rows = lines.slice(1).map((line) => {
-        const cols = line.split(',').map((c) => c.trim())
-        return {
-            fase: cols[0] ?? '',
-            descripcion_fase: cols[1] ?? '',
-            orden_fase: parseInt(cols[2]) || 0,
-            tarea: cols[3] ?? '',
-            tipo: cols[4] ?? 'entregable',
-            dias_antes: cols[5] !== undefined && cols[5] !== '' ? parseInt(cols[5]) : null,
-            orden_tarea: parseInt(cols[6]) || 0,
-        }
-    }).filter((r) => r.fase && r.tarea)
-
-    if (rows.length === 0) throw new Error('No se encontraron filas válidas (fase y tarea son requeridos)')
-
-    const faseMap = new Map<string, CsvParsedFase>()
-    for (const row of rows) {
-        if (!faseMap.has(row.fase)) {
-            faseMap.set(row.fase, {
-                nombre: row.fase,
-                descripcion: row.descripcion_fase || null,
-                orden: row.orden_fase,
-                tareas: [],
-            })
-        }
-        const fase = faseMap.get(row.fase)!
-        fase.tareas.push({
-            nombre: row.tarea,
-            tipo: VALID_TIPOS.includes(row.tipo) ? row.tipo : 'entregable',
-            diasAntes: row.dias_antes !== null && !isNaN(row.dias_antes) ? row.dias_antes : null,
-            orden: row.orden_tarea,
+    function submit() {
+        if (!nombre.trim()) { onDone(); return }
+        startTransition(async () => {
+            const res = await createPlantillaTema(faseId, nombre.trim(), descripcion.trim(), tipoEvento)
+            if (res?.error) onError(res.error)
+            else { setNombre(''); setDescripcion(''); onDone() }
         })
     }
 
-    return Array.from(faseMap.values())
-        .sort((a, b) => a.orden - b.orden)
-        .map((f) => ({ ...f, tareas: [...f.tareas].sort((a, b) => a.orden - b.orden) }))
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.5rem 0', alignItems: 'stretch' }}>
+            <input
+                autoFocus
+                className="form-input"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                placeholder="Nombre del tema"
+                style={{ fontSize: '0.88rem' }}
+            />
+            <input
+                className="form-input"
+                value={descripcion}
+                onChange={(e) => setDescripcion(e.target.value)}
+                placeholder="Descripción (opcional)"
+                style={{ fontSize: '0.82rem' }}
+            />
+            <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <button className="btn-ghost" style={st.smallBtn} onClick={onDone}>Cancelar</button>
+                <button className="btn-gold" style={st.smallBtn} onClick={submit} disabled={isPending || !nombre.trim()}>
+                    {isPending ? '...' : 'Crear tema'}
+                </button>
+            </div>
+        </div>
+    )
 }
 
-const TIPO_LABELS_CSV: Record<string, string> = {
-    reunion: '📅 Reunión',
-    entregable: '📄 Entregable',
-    decision: '✅ Decisión',
-    pago: '💳 Pago',
-}
-
-function CsvImportModal({
-    onClose,
-    onImported,
-}: {
-    onClose: () => void
-    onImported: (tipo_evento: string) => void
-}) {
+function AddTareaForm({ temaId, tipoEvento, onError, onDone }: { temaId: string; tipoEvento: string; onError: (e: string) => void; onDone: () => void }) {
     const [nombre, setNombre] = useState('')
-    const [parsed, setParsed] = useState<CsvParsedFase[] | null>(null)
-    const [parseError, setParseError] = useState<string | null>(null)
-    const [fileName, setFileName] = useState('')
-    const [importing, setImporting] = useState(false)
-    const [importError, setImportError] = useState<string | null>(null)
-    const [success, setSuccess] = useState(false)
-    const fileRef = useRef<HTMLInputElement>(null)
+    const [isPending, startTransition] = useTransition()
 
-    function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-        const file = e.target.files?.[0]
-        if (!file) return
-        setFileName(file.name)
-        setParseError(null)
-        setParsed(null)
-        const reader = new FileReader()
-        reader.onload = (ev) => {
-            try {
-                const fases = parseCsvText(ev.target?.result as string)
-                setParsed(fases)
-            } catch (err) {
-                setParseError((err as Error).message)
-            }
-        }
-        reader.readAsText(file)
+    function submit() {
+        if (!nombre.trim()) { onDone(); return }
+        startTransition(async () => {
+            const res = await createPlantillaTarea(temaId, nombre.trim(), tipoEvento)
+            if (res?.error) onError(res.error)
+            else { setNombre(''); onDone() }
+        })
     }
-
-    async function handleImport() {
-        if (!nombre.trim() || !parsed?.length) return
-        setImporting(true)
-        setImportError(null)
-        const res = await importPlantillaCSV(nombre.trim(), parsed)
-        setImporting(false)
-        if ('error' in res) {
-            setImportError(res.error)
-            return
-        }
-        setSuccess(true)
-        setTimeout(() => onImported(res.tipo_evento), 1200)
-    }
-
-    const totalTareas = parsed?.reduce((s, f) => s + f.tareas.length, 0) ?? 0
 
     return (
-        <div style={st.modalOverlay} onClick={onClose}>
-            <div
-                style={{ ...st.modal, maxWidth: '540px', maxHeight: '90vh', overflow: 'auto' }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <h3 style={st.modalTitle}>Importar plantilla desde CSV</h3>
-
-                {success ? (
-                    <div style={{ textAlign: 'center', padding: '1.5rem 0', color: '#2E7D32', fontSize: '1rem', fontWeight: 600 }}>
-                        ✓ Plantilla importada con éxito
-                    </div>
-                ) : (
-                    <>
-                        {/* Nombre */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                            <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Nombre de la plantilla *
-                            </label>
-                            <input
-                                className="form-input"
-                                placeholder="Ej: Despedida de Soltera"
-                                value={nombre}
-                                onChange={(e) => setNombre(e.target.value)}
-                                autoFocus
-                            />
-                        </div>
-
-                        {/* File picker */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                            <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                Archivo CSV
-                            </label>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                <button
-                                    type="button"
-                                    className="btn-ghost"
-                                    style={{ fontSize: '0.82rem', padding: '0.45rem 0.9rem' }}
-                                    onClick={() => fileRef.current?.click()}
-                                >
-                                    Seleccionar archivo
-                                </button>
-                                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-                                    {fileName || 'Ningún archivo seleccionado'}
-                                </span>
-                            </div>
-                            <input
-                                ref={fileRef}
-                                type="file"
-                                accept=".csv,text/csv"
-                                style={{ display: 'none' }}
-                                onChange={handleFile}
-                            />
-                            <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' }}>
-                                Formato: <code style={{ backgroundColor: 'var(--color-cream-dark)', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>fase,descripcion_fase,orden_fase,tarea,tipo,dias_antes,orden_tarea</code>
-                            </p>
-                        </div>
-
-                        {parseError && (
-                            <div style={{ padding: '0.65rem 0.9rem', backgroundColor: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', fontSize: '0.82rem', color: '#B91C1C' }}>
-                                ⚠ {parseError}
-                            </div>
-                        )}
-
-                        {/* Preview */}
-                        {parsed && parsed.length > 0 && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                <p style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                    Preview — {parsed.length} fase{parsed.length !== 1 ? 's' : ''}, {totalTareas} tarea{totalTareas !== 1 ? 's' : ''}
-                                </p>
-                                <div style={{ border: '1px solid var(--color-border)', borderRadius: '8px', overflow: 'hidden', maxHeight: '280px', overflowY: 'auto' }}>
-                                    {parsed.map((fase, fi) => (
-                                        <div key={fi} style={{ borderBottom: fi < parsed.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
-                                            <div style={{ padding: '0.55rem 0.85rem', backgroundColor: 'var(--color-cream)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-gold)', backgroundColor: 'rgba(201,168,76,0.12)', padding: '0.1rem 0.45rem', borderRadius: '20px' }}>
-                                                    F{fi + 1}
-                                                </span>
-                                                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text)' }}>{fase.nombre}</span>
-                                                {fase.descripcion && (
-                                                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>— {fase.descripcion}</span>
-                                                )}
-                                            </div>
-                                            {fase.tareas.map((tarea, ti) => (
-                                                <div key={ti} style={{ padding: '0.4rem 0.85rem 0.4rem 2rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderTop: '1px solid var(--color-border)' }}>
-                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', flexShrink: 0 }}>
-                                                        {TIPO_LABELS_CSV[tarea.tipo] ?? tarea.tipo}
-                                                    </span>
-                                                    <span style={{ fontSize: '0.83rem', flex: 1 }}>{tarea.nombre}</span>
-                                                    {tarea.diasAntes !== null && (
-                                                        <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', backgroundColor: 'var(--color-cream-dark)', padding: '0.1rem 0.4rem', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                                            {tarea.diasAntes}d antes
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {importError && (
-                            <div style={{ padding: '0.65rem 0.9rem', backgroundColor: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', fontSize: '0.82rem', color: '#B91C1C' }}>
-                                ⚠ {importError}
-                            </div>
-                        )}
-
-                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', paddingTop: '0.25rem' }}>
-                            <button className="btn-ghost" onClick={onClose} disabled={importing}>
-                                Cancelar
-                            </button>
-                            <button
-                                className="btn-primary"
-                                onClick={handleImport}
-                                disabled={importing || !nombre.trim() || !parsed?.length}
-                            >
-                                {importing ? 'Importando…' : 'Importar'}
-                            </button>
-                        </div>
-                    </>
-                )}
-            </div>
+        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.4rem' }}>
+            <input
+                autoFocus
+                className="form-input"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && submit()}
+                placeholder="Nombre de la tarea"
+                style={{ flex: 1, fontSize: '0.85rem' }}
+            />
+            <button className="btn-ghost" style={st.smallBtn} onClick={onDone}>Cancelar</button>
+            <button className="btn-gold" style={st.smallBtn} onClick={submit} disabled={isPending || !nombre.trim()}>
+                {isPending ? '...' : 'Agregar'}
+            </button>
         </div>
     )
 }
@@ -1127,18 +964,24 @@ const st: Styles = {
     dragHandleSm: { cursor: 'grab', display: 'flex', alignItems: 'center', flexShrink: 0, color: 'var(--color-text-muted)' },
     faseNombre: { fontFamily: 'var(--font-serif)', fontSize: '1rem', fontWeight: 600, color: 'var(--color-text)' },
     faseDesc: { fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.15rem' },
-    tareasSection: { display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingTop: '0.5rem', borderTop: '1px solid var(--color-border)' },
-    tareasLabel: { fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', marginBottom: '0.15rem' },
-    tareasList: { display: 'flex', flexDirection: 'column', gap: '0.2rem' },
-    tareaRow: { display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-sm)', background: 'var(--color-cream)' },
-    tareaEditorRow: { display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.35rem 0', flexWrap: 'wrap' },
-    tipoChip: { fontSize: '0.72rem', color: 'var(--color-text-muted)', flexShrink: 0 },
-    mesesChip: { fontSize: '0.7rem', color: 'var(--color-text-muted)', backgroundColor: 'var(--color-cream-dark)', padding: '0.15rem 0.45rem', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0 },
+    faseMeses: { fontSize: '0.72rem', color: 'var(--color-gold-dark)', marginTop: '0.25rem', fontFamily: 'var(--font-mono, monospace)' },
+    temasSection: { display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid var(--color-border)' },
+    tareasLabel: { fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)' },
+    temaCard: { padding: '0.75rem 0.85rem', borderRadius: 'var(--radius-sm)', background: 'var(--color-cream)', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.5rem' },
+    temaHeader: { display: 'flex', alignItems: 'flex-start', gap: '0.5rem' },
+    temaNombre: { fontSize: '0.92rem', fontWeight: 600, color: 'var(--color-text)' },
+    temaDesc: { fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.15rem' },
+    temaMeses: { fontSize: '0.7rem', color: 'var(--color-gold-dark)', marginTop: '0.2rem', fontFamily: 'var(--font-mono, monospace)' },
+    tareasInTema: { paddingLeft: '0.75rem', borderLeft: '1px dashed var(--color-border)', display: 'flex', flexDirection: 'column' },
+    tareaRow: { display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.5rem', borderRadius: 'var(--radius-sm)', background: 'var(--color-white)', border: '1px solid var(--color-border)' },
+    tareaEditorRow: { display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0' },
     iconBtn: { fontSize: '0.7rem', padding: '0.2rem 0.45rem', flexShrink: 0 },
     smallBtn: { fontSize: '0.78rem', padding: '0.35rem 0.75rem' },
     emptyFases: { padding: '2rem', textAlign: 'center' },
     modalOverlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 },
-    modal: { backgroundColor: 'white', borderRadius: 'var(--radius)', padding: '2rem', width: '100%', maxWidth: '400px', boxShadow: '0 8px 40px rgba(0,0,0,0.18)', display: 'flex', flexDirection: 'column', gap: '0.75rem' },
+    modal: { backgroundColor: 'white', borderRadius: 'var(--radius-md)', padding: '2rem', width: '100%', maxWidth: '400px', boxShadow: '0 8px 40px rgba(0,0,0,0.18)', display: 'flex', flexDirection: 'column', gap: '0.75rem' },
     modalTitle: { fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 600, color: 'var(--color-text)' },
     renameRow: { marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' },
+    tinyLabel: { fontSize: '0.72rem', fontWeight: 500, color: 'var(--color-text-muted)' },
+    tinyHint: { fontSize: '0.7rem', color: 'var(--color-text-muted)' },
 }

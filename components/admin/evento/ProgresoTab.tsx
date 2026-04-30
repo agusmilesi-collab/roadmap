@@ -1,126 +1,273 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect, useTransition, useRef } from 'react'
 import { DragDropContext, Droppable, Draggable, type DropResult, type DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
-import type { Fase, Tarea, Acuerdo } from './EventoDetailClient'
+import type { Fase, Tema, Tarea, Acuerdo } from './EventoDetailClient'
 import {
-    createFaseEnPosicion,
-    updateFase, deleteFase,
-    createTarea, updateTarea, deleteTarea,
+    createFase, updateFase, deleteFase,
+    createTema, updateTema, deleteTema, reorderTemas,
+    createTarea, updateTarea, deleteTarea, reorderTareas,
     createAcuerdo, deleteAcuerdo,
-    reorderFases, reorderTareas,
 } from '@/app/(admin)/eventos/[id]/actions'
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const TIPO_ICONS: Record<string, string> = { reunion: '💬', entregable: '📦', decision: '⚡', pago: '💰' }
-const TIPO_OPTIONS = [
-    { value: 'reunion', label: '💬 Reunión' },
-    { value: 'entregable', label: '📦 Entregable' },
-    { value: 'decision', label: '⚡ Decisión' },
-    { value: 'pago', label: '💰 Pago' },
-]
-const ESTADO_OPTIONS = [
-    { value: 'pendiente', label: 'Pendiente' },
-    { value: 'en_curso', label: 'En curso' },
-    { value: 'completada', label: 'Completada' },
-]
-const ESTADO_STYLES: Record<string, React.CSSProperties> = {
-    pendiente: { backgroundColor: 'rgba(120,120,120,0.1)', color: '#888' },
-    en_curso: { backgroundColor: 'rgba(59,130,246,0.12)', color: '#2563EB' },
-    completada: { backgroundColor: 'rgba(34,197,94,0.12)', color: '#16A34A' },
+const ESTADOS: Array<'pendiente' | 'en_curso' | 'completada'> = ['pendiente', 'en_curso', 'completada']
+
+function nextEstado(actual: string): 'pendiente' | 'en_curso' | 'completada' {
+    const idx = ESTADOS.indexOf(actual as typeof ESTADOS[number])
+    return ESTADOS[((idx >= 0 ? idx : -1) + 1) % ESTADOS.length]
 }
 
-function isVencida(tarea: Tarea): boolean {
-    if (tarea.completada) return false
-    if (!tarea.fecha) return false
-    const hoy = new Date()
-    hoy.setHours(0, 0, 0, 0)
-    return new Date(tarea.fecha + 'T12:00:00') < hoy
+function temaPercent(tema: Tema): number {
+    if (tema.tareas.length === 0) return 0
+    const done = tema.tareas.filter((t) => t.estado === 'completada').length
+    return Math.round((done / tema.tareas.length) * 100)
+}
+
+function temaEstado(tema: Tema): 'pendiente' | 'en_curso' | 'completada' {
+    const pct = temaPercent(tema)
+    if (pct === 0) return 'pendiente'
+    if (pct === 100) return 'completada'
+    return 'en_curso'
+}
+
+function formatAcuerdoDate(iso: string): string {
+    const d = new Date(iso)
+    const day = d.getDate()
+    const monthsShort = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC']
+    return `${day} ${monthsShort[d.getMonth()]}`
+}
+
+function formatRangeMonths(inicio: string | null, fin: string | null): string {
+    if (!inicio && !fin) return ''
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    function fmt(iso: string | null): string {
+        if (!iso) return ''
+        const d = new Date(iso + 'T12:00:00')
+        return `${meses[d.getMonth()]} ${d.getFullYear()}`
+    }
+    const a = fmt(inicio)
+    const b = fmt(fin)
+    if (a && b) return `${a} → ${b}`
+    return a || b
+}
+
+function computePosition(items: { position: number }[], destIdx: number): number {
+    if (items.length === 0) return 1
+    if (destIdx <= 0) return items[0].position / 2
+    if (destIdx >= items.length) return items[items.length - 1].position + 1
+    return (items[destIdx - 1].position + items[destIdx].position) / 2
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ProgresoTab({ fases: initialFases, eventoId }: { fases: Fase[]; eventoId: string }) {
     const [fases, setFases] = useState<Fase[]>(initialFases)
-    const [expandedTareaId, setExpandedTareaId] = useState<string | null>(null)
-    const [addTareaFaseId, setAddTareaFaseId] = useState<string | null>(null)
-    const [editingFaseId, setEditingFaseId] = useState<string | null>(null)
-    const [showAddFase, setShowAddFase] = useState(false)
+    const [expanded, setExpanded] = useState<Set<string>>(new Set())
     const [, startReorder] = useTransition()
 
-    // Sync local state when server re-renders with fresh data (after revalidatePath)
     useEffect(() => {
         setFases(initialFases)
     }, [initialFases])
+
+    function toggleExpand(temaId: string) {
+        setExpanded((prev) => {
+            const next = new Set(prev)
+            if (next.has(temaId)) next.delete(temaId)
+            else next.add(temaId)
+            return next
+        })
+    }
 
     function handleDragEnd(result: DropResult) {
         const { destination, source, type } = result
         if (!destination) return
         if (destination.droppableId === source.droppableId && destination.index === source.index) return
 
-        if (type === 'FASE') {
-            const reordered = Array.from(fases)
-            const [moved] = reordered.splice(source.index, 1)
-            reordered.splice(destination.index, 0, moved)
-            const withOrden = reordered.map((f, i) => ({ ...f, orden: i + 1 }))
-            setFases(withOrden)
-            startReorder(async () => {
-                await reorderFases(eventoId, withOrden.map((f) => ({ id: f.id, orden: f.orden })))
-            })
-        } else if (type.startsWith('TAREA_')) {
+        if (type.startsWith('TEMA_')) {
             const faseId = source.droppableId
+            if (destination.droppableId !== faseId) return // no cross-fase drag for now
             const faseIdx = fases.findIndex((f) => f.id === faseId)
             if (faseIdx === -1) return
             const fase = fases[faseIdx]
-            const tareas = Array.from(fase.tareas)
-            const [moved] = tareas.splice(source.index, 1)
-            tareas.splice(destination.index, 0, moved)
-            const tareasConOrden = tareas.map((t, i) => ({ ...t, orden: i + 1 }))
+            const temas = Array.from(fase.temas)
+            const [moved] = temas.splice(source.index, 1)
+            const otros = temas
+            const newPos = computePosition(otros, destination.index)
+            temas.splice(destination.index, 0, { ...moved, position: newPos })
+
             const newFases = [...fases]
-            newFases[faseIdx] = { ...fase, tareas: tareasConOrden }
+            newFases[faseIdx] = { ...fase, temas }
             setFases(newFases)
+
             startReorder(async () => {
-                await reorderTareas(eventoId, tareasConOrden.map((t) => ({ id: t.id, orden: t.orden })))
+                await reorderTemas(eventoId, [{ id: moved.id, position: newPos }])
             })
+        } else if (type.startsWith('TAREA_')) {
+            const temaId = source.droppableId
+            if (destination.droppableId !== temaId) return
+            for (let fi = 0; fi < fases.length; fi++) {
+                const fase = fases[fi]
+                const ti = fase.temas.findIndex((t) => t.id === temaId)
+                if (ti === -1) continue
+                const tema = fase.temas[ti]
+                const tareas = Array.from(tema.tareas)
+                const [moved] = tareas.splice(source.index, 1)
+                const newPos = computePosition(tareas, destination.index)
+                tareas.splice(destination.index, 0, { ...moved, position: newPos })
+                const newTemas = [...fase.temas]
+                newTemas[ti] = { ...tema, tareas }
+                const newFases = [...fases]
+                newFases[fi] = { ...fase, temas: newTemas }
+                setFases(newFases)
+                startReorder(async () => {
+                    await reorderTareas(eventoId, [{ id: moved.id, position: newPos }])
+                })
+                return
+            }
         }
     }
 
-    function reloadNeeded() { window.location.reload() }
-
     return (
         <DragDropContext onDragEnd={handleDragEnd}>
-            <Droppable droppableId="fases-list" type="FASE">
-                {(provided) => (
-                    <div ref={provided.innerRef} {...provided.droppableProps}
-                        style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
-                    >
-                        {fases.length === 0 && (
-                            <div className="card" style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-                                Sin fases aún. Agregá la primera fase abajo.
-                            </div>
-                        )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {fases.length === 0 && (
+                    <div className="card" style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+                        Sin fases aún. Agregá la primera fase abajo.
+                    </div>
+                )}
 
-                        {fases.map((fase, index) => (
-                            <Draggable key={fase.id} draggableId={fase.id} index={index}>
-                                {(drag, snapshot) => (
+                {fases.map((fase, idx) => (
+                    <FaseCard
+                        key={fase.id}
+                        fase={fase}
+                        index={idx}
+                        eventoId={eventoId}
+                        expanded={expanded}
+                        onToggleExpand={toggleExpand}
+                    />
+                ))}
+
+                <AddFaseRow eventoId={eventoId} fases={fases} />
+            </div>
+        </DragDropContext>
+    )
+}
+
+// ─── FaseCard ─────────────────────────────────────────────────────────────────
+
+function FaseCard({
+    fase, index, eventoId, expanded, onToggleExpand,
+}: {
+    fase: Fase
+    index: number
+    eventoId: string
+    expanded: Set<string>
+    onToggleExpand: (id: string) => void
+}) {
+    const [editingNombre, setEditingNombre] = useState(false)
+    const [editingDesc, setEditingDesc] = useState(false)
+    const [editingFechas, setEditingFechas] = useState(false)
+    const [confirmDelete, setConfirmDelete] = useState(false)
+    const [, startTr] = useTransition()
+    const [adding, setAdding] = useState(false)
+
+    function saveNombre(value: string) {
+        const v = value.trim()
+        if (!v || v === fase.nombre) { setEditingNombre(false); return }
+        startTr(async () => {
+            await updateFase(fase.id, eventoId, { nombre: v })
+            setEditingNombre(false)
+        })
+    }
+    function saveDesc(value: string) {
+        const v = value.trim()
+        if (v === (fase.descripcion ?? '')) { setEditingDesc(false); return }
+        startTr(async () => {
+            await updateFase(fase.id, eventoId, { descripcion: v || null })
+            setEditingDesc(false)
+        })
+    }
+    function saveFechas(inicio: string, fin: string) {
+        startTr(async () => {
+            await updateFase(fase.id, eventoId, {
+                fecha_inicio: inicio || null,
+                fecha_fin: fin || null,
+            })
+            setEditingFechas(false)
+        })
+    }
+    function handleDelete() {
+        startTr(async () => { await deleteFase(fase.id, eventoId) })
+    }
+
+    const dateLabel = formatRangeMonths(fase.fecha_inicio, fase.fecha_fin)
+
+    return (
+        <div style={st.fase}>
+            <div style={st.faseHeader}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={st.faseEyebrow}>Etapa {index + 1}</div>
+                    {editingNombre ? (
+                        <InlineInput initial={fase.nombre} onSave={saveNombre} onCancel={() => setEditingNombre(false)} fontSize="1.375rem" fontWeight={600} />
+                    ) : (
+                        <div style={st.faseName} onClick={() => setEditingNombre(true)} title="Click para editar">
+                            {fase.nombre}
+                        </div>
+                    )}
+                    {editingDesc ? (
+                        <InlineTextarea initial={fase.descripcion ?? ''} onSave={saveDesc} onCancel={() => setEditingDesc(false)} placeholder="Descripción de la etapa…" />
+                    ) : (
+                        <div style={st.faseDesc} onClick={() => setEditingDesc(true)} title="Click para editar descripción">
+                            {fase.descripcion || <span style={{ color: 'var(--color-text-faint, #B8B2A4)', fontStyle: 'italic' }}>+ Agregar descripción</span>}
+                        </div>
+                    )}
+                </div>
+                <div style={st.faseHeaderRight}>
+                    {editingFechas ? (
+                        <FechasEditor
+                            inicio={fase.fecha_inicio}
+                            fin={fase.fecha_fin}
+                            onSave={saveFechas}
+                            onCancel={() => setEditingFechas(false)}
+                        />
+                    ) : (
+                        <div style={st.faseDates} onClick={() => setEditingFechas(true)} title="Click para editar fechas">
+                            {dateLabel || '+ Fechas'}
+                        </div>
+                    )}
+                    {confirmDelete ? (
+                        <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                            <button onClick={handleDelete} style={st.confirmYes}>Eliminar</button>
+                            <button onClick={() => setConfirmDelete(false)} style={st.confirmNo}>Cancelar</button>
+                        </div>
+                    ) : (
+                        <button onClick={() => setConfirmDelete(true)} style={st.faseDeleteBtn} title="Eliminar etapa">×</button>
+                    )}
+                </div>
+            </div>
+
+            <Droppable droppableId={fase.id} type={`TEMA_${fase.id}`}>
+                {(provided) => (
+                    <div ref={provided.innerRef} {...provided.droppableProps} style={st.temasList}>
+                        {fase.temas.map((tema, idx) => (
+                            <Draggable key={tema.id} draggableId={tema.id} index={idx}>
+                                {(drag, snap) => (
                                     <div
                                         ref={drag.innerRef}
                                         {...drag.draggableProps}
-                                        style={{ ...drag.draggableProps.style, opacity: snapshot.isDragging ? 0.85 : 1 }}
+                                        style={{
+                                            ...drag.draggableProps.style,
+                                            opacity: snap.isDragging ? 0.85 : 1,
+                                        }}
                                     >
-                                        <FaseCard
-                                            fase={fase}
-                                            todasLasFases={fases}
+                                        <TemaRow
+                                            tema={tema}
                                             eventoId={eventoId}
-                                            expandedTareaId={expandedTareaId}
-                                            setExpandedTareaId={setExpandedTareaId}
-                                            isAddingTarea={addTareaFaseId === fase.id}
-                                            onToggleAddTarea={() => setAddTareaFaseId(addTareaFaseId === fase.id ? null : fase.id)}
-                                            isEditing={editingFaseId === fase.id}
-                                            onToggleEdit={() => setEditingFaseId(editingFaseId === fase.id ? null : fase.id)}
+                                            isExpanded={expanded.has(tema.id)}
+                                            onToggle={() => onToggleExpand(tema.id)}
                                             dragHandleProps={drag.dragHandleProps}
-                                            onReloadNeeded={reloadNeeded}
                                         />
                                     </div>
                                 )}
@@ -131,501 +278,868 @@ export function ProgresoTab({ fases: initialFases, eventoId }: { fases: Fase[]; 
                 )}
             </Droppable>
 
-            {/* Add Fase */}
-            <div style={{ marginTop: '0.5rem' }}>
-                {showAddFase ? (
-                    <AddFaseForm eventoId={eventoId} onDone={() => setShowAddFase(false)} fasesExistentes={fases} />
-                ) : (
-                    <button className="btn-ghost" style={styles.addFaseBtn} onClick={() => setShowAddFase(true)}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                        Agregar fase
-                    </button>
-                )}
-            </div>
-        </DragDropContext>
-    )
-}
-
-// ─── FaseCard ─────────────────────────────────────────────────────────────────
-
-function FaseCard({
-    fase, todasLasFases, eventoId, expandedTareaId, setExpandedTareaId,
-    isAddingTarea, onToggleAddTarea, isEditing, onToggleEdit,
-    dragHandleProps, onReloadNeeded,
-}: {
-    fase: Fase; todasLasFases: Fase[]; eventoId: string
-    expandedTareaId: string | null
-    setExpandedTareaId: (id: string | null) => void
-    isAddingTarea: boolean; onToggleAddTarea: () => void
-    isEditing: boolean; onToggleEdit: () => void
-    dragHandleProps: DraggableProvidedDragHandleProps | null | undefined
-    onReloadNeeded: () => void
-}) {
-    const [isPending, startTransition] = useTransition()
-    const [confirmDelete, setConfirmDelete] = useState(false)
-    const [editNombre, setEditNombre] = useState(fase.nombre)
-    const [editDescripcion, setEditDescripcion] = useState(fase.descripcion ?? '')
-
-    const completadas = fase.tareas.filter((t) => t.completada).length
-
-    function handleSaveFase() {
-        startTransition(async () => {
-            await updateFase(fase.id, eventoId, { nombre: editNombre, descripcion: editDescripcion || null })
-            onToggleEdit()
-        })
-    }
-
-    function handleDeleteFase() {
-        startTransition(async () => {
-            await deleteFase(fase.id, eventoId)
-        })
-    }
-
-    return (
-        <div className="card" style={styles.faseCard}>
-            {/* Fase header */}
-            <div style={styles.faseHeader}>
-                {/* Drag handle */}
-                <div {...(dragHandleProps as object)} style={styles.faseDragHandle} title="Arrastrar para reordenar">
-                    ⠿
-                </div>
-                {isEditing ? (
-                    <div style={styles.faseEditRow}>
-                        <input value={editNombre} onChange={e => setEditNombre(e.target.value)} className="form-input" style={{ fontSize: '0.95rem', flex: 1 }} placeholder="Nombre de fase" />
-                        <input value={editDescripcion} onChange={e => setEditDescripcion(e.target.value)} className="form-input" style={{ fontSize: '0.85rem', flex: 2 }} placeholder="Descripción (opcional)" />
-                        <button onClick={handleSaveFase} disabled={isPending} className="btn-gold" style={{ padding: '0.45rem 1rem', fontSize: '0.8rem' }}>Guardar</button>
-                        <button onClick={onToggleEdit} className="btn-ghost" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }}>Cancelar</button>
-                    </div>
-                ) : (
-                    <div style={styles.faseTitleRow}>
-                        <div>
-                            <h3 style={styles.faseNombre}>{fase.nombre}</h3>
-                            {fase.descripcion && <p style={styles.faseDesc}>{fase.descripcion}</p>}
-                        </div>
-                        <div style={styles.faseMeta}>
-                            <span style={styles.faseCounter}>{completadas}/{fase.tareas.length} tareas</span>
-                            <button onClick={onToggleEdit} style={styles.iconBtn} title="Editar fase">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                </svg>
-                            </button>
-                            {confirmDelete ? (
-                                <span style={styles.confirmSmall}>
-                                    <button onClick={handleDeleteFase} disabled={isPending} style={styles.confirmYesSmall}>Eliminar</button>
-                                    <button onClick={() => setConfirmDelete(false)} style={styles.confirmNoSmall}>No</button>
-                                </span>
-                            ) : (
-                                <button onClick={() => setConfirmDelete(true)} style={{ ...styles.iconBtn, color: 'var(--color-error)' }} title="Eliminar fase">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
-                                    </svg>
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* Tareas — draggable */}
-            {fase.tareas.length > 0 && (
-                <Droppable droppableId={fase.id} type={`TAREA_${fase.id}`}>
-                    {(provided) => (
-                        <div ref={provided.innerRef} {...provided.droppableProps} style={styles.tareasList}>
-                            {[...fase.tareas]
-                                .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
-                                .map((tarea, tIdx) => (
-                                    <Draggable key={tarea.id} draggableId={tarea.id} index={tIdx}>
-                                        {(tdrag, tsnap) => (
-                                            <div
-                                                ref={tdrag.innerRef}
-                                                {...tdrag.draggableProps}
-                                                style={{ ...tdrag.draggableProps.style, opacity: tsnap.isDragging ? 0.85 : 1 }}
-                                            >
-                                                <TareaRow
-                                                    tarea={tarea}
-                                                    eventoId={eventoId}
-                                                    currentFaseId={fase.id}
-                                                    todasLasFases={todasLasFases}
-                                                    isExpanded={expandedTareaId === tarea.id}
-                                                    onToggle={() => setExpandedTareaId(expandedTareaId === tarea.id ? null : tarea.id)}
-                                                    dragHandleProps={tdrag.dragHandleProps}
-                                                />
-                                            </div>
-                                        )}
-                                    </Draggable>
-                                ))}
-                            {provided.placeholder}
-                        </div>
-                    )}
-                </Droppable>
-            )}
-
-            {/* Add Tarea */}
-            {isAddingTarea ? (
-                <AddTareaForm faseId={fase.id} eventoId={eventoId} onDone={onToggleAddTarea} />
+            {adding ? (
+                <AddTemaForm
+                    eventoId={eventoId}
+                    faseId={fase.id}
+                    onDone={(newTemaId) => {
+                        setAdding(false)
+                        if (newTemaId) onToggleExpand(newTemaId)
+                    }}
+                />
             ) : (
-                <button onClick={onToggleAddTarea} className="btn-ghost" style={styles.addTareaBtn}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                    Agregar tarea
-                </button>
+                <button onClick={() => setAdding(true)} style={st.addInline}>+ Agregar tema</button>
             )}
         </div>
     )
 }
 
-// ─── TareaRow ─────────────────────────────────────────────────────────────────
+// ─── TemaRow ──────────────────────────────────────────────────────────────────
 
-function TareaRow({ tarea, eventoId, currentFaseId, todasLasFases, isExpanded, onToggle, dragHandleProps }: {
-    tarea: Tarea; eventoId: string
-    currentFaseId: string; todasLasFases: Fase[]
-    isExpanded: boolean; onToggle: () => void
+function TemaRow({
+    tema, eventoId, isExpanded, onToggle, dragHandleProps,
+}: {
+    tema: Tema
+    eventoId: string
+    isExpanded: boolean
+    onToggle: () => void
     dragHandleProps?: DraggableProvidedDragHandleProps | null
 }) {
-    const vencida = isVencida(tarea)
+    const [editingNombre, setEditingNombre] = useState(false)
+    const [editingDesc, setEditingDesc] = useState(false)
+    const [confirmDelete, setConfirmDelete] = useState(false)
+    const [, startTr] = useTransition()
+
+    const pct = temaPercent(tema)
+    const estado = temaEstado(tema)
+    const done = tema.tareas.filter((t) => t.estado === 'completada').length
+
+    function saveNombre(value: string) {
+        const v = value.trim()
+        if (!v || v === tema.nombre) { setEditingNombre(false); return }
+        startTr(async () => {
+            await updateTema(tema.id, eventoId, { nombre: v })
+            setEditingNombre(false)
+        })
+    }
+    function saveDesc(value: string) {
+        const v = value.trim()
+        if (v === (tema.descripcion ?? '')) { setEditingDesc(false); return }
+        startTr(async () => {
+            await updateTema(tema.id, eventoId, { descripcion: v || null })
+            setEditingDesc(false)
+        })
+    }
+    function handleDelete() {
+        startTr(async () => { await deleteTema(tema.id, eventoId) })
+    }
+
     return (
-        <div style={{ ...styles.tareaRow, borderColor: isExpanded ? 'var(--color-gold)' : vencida ? 'rgba(239,68,68,0.3)' : 'var(--color-border)', flexDirection: 'column' }}>
-            {/* Summary row: drag handle + toggle button side by side */}
-            <div style={{ display: 'flex', alignItems: 'stretch' }}>
-                {dragHandleProps && (
-                    <div {...dragHandleProps} style={styles.tareaDragHandle} title="Arrastrar para reordenar">
-                        ⠿
-                    </div>
-                )}
-                <button onClick={onToggle} style={styles.tareaRowBtn}>
-                    <span style={styles.tareaIcon}>{TIPO_ICONS[tarea.tipo] ?? '📌'}</span>
-                    <span style={{
-                        ...styles.tareaNombre,
-                        color: tarea.completada ? 'var(--color-text-muted)' : vencida ? '#EF4444' : 'var(--color-text)',
-                        textDecoration: tarea.completada ? 'line-through' : 'none',
-                    }}>{tarea.nombre}</span>
-                    {vencida ? (
-                        <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.06em', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.1)', padding: '0.1rem 0.45rem', borderRadius: '20px', whiteSpace: 'nowrap', flexShrink: 0 }}>VENCIDA</span>
+        <div style={{ ...st.tema, borderBottom: '1px solid var(--color-border)' }}>
+            <div style={st.temaRow}>
+                <div {...(dragHandleProps as object)} style={st.temaDragHandle} title="Arrastrar para reordenar">⠿</div>
+
+                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={(e) => {
+                    if (editingNombre || editingDesc) return
+                    if ((e.target as HTMLElement).closest('button, input, textarea')) return
+                    onToggle()
+                }}>
+                    {editingNombre ? (
+                        <InlineInput initial={tema.nombre} onSave={saveNombre} onCancel={() => setEditingNombre(false)} fontSize="1rem" fontWeight={600} />
                     ) : (
-                        <span style={{ ...styles.estadoBadge, ...ESTADO_STYLES[tarea.estado] }}>
-                            {ESTADO_OPTIONS.find(o => o.value === tarea.estado)?.label ?? tarea.estado}
-                        </span>
+                        <div style={st.temaName} onClick={(e) => { e.stopPropagation(); setEditingNombre(true) }} title="Click para editar">
+                            {tema.nombre}
+                        </div>
                     )}
-                    {tarea.fecha && (
-                        <span style={{ ...styles.tareaFecha, color: vencida ? '#EF4444' : 'var(--color-text-muted)' }}>
-                            {new Date(tarea.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        </span>
+                    {editingDesc ? (
+                        <InlineTextarea initial={tema.descripcion ?? ''} onSave={saveDesc} onCancel={() => setEditingDesc(false)} placeholder="Descripción del tema…" />
+                    ) : (
+                        <div style={st.temaDesc} onClick={(e) => { e.stopPropagation(); setEditingDesc(true) }} title="Click para editar descripción">
+                            {tema.descripcion || <span style={{ color: 'var(--color-text-faint, #B8B2A4)', fontStyle: 'italic' }}>+ descripción</span>}
+                        </div>
                     )}
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, color: 'var(--color-text-muted)' }}>
-                        <polyline points="6 9 12 15 18 9" />
+                </div>
+
+                <StatusPill estado={estado} pct={pct} />
+
+                <button onClick={onToggle} style={st.chevronBtn} title={isExpanded ? 'Colapsar' : 'Expandir'}>
+                    <svg style={{ ...st.chevron, transform: isExpanded ? 'rotate(180deg)' : 'none' }} width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M6 9l6 6 6-6" />
                     </svg>
                 </button>
+
+                {confirmDelete ? (
+                    <div style={st.deleteConfirmInline}>
+                        <button onClick={handleDelete} style={st.confirmYesXs}>Sí</button>
+                        <button onClick={() => setConfirmDelete(false)} style={st.confirmNoXs}>No</button>
+                    </div>
+                ) : (
+                    <button onClick={() => setConfirmDelete(true)} style={st.temaDeleteBtn} title="Eliminar tema">×</button>
+                )}
             </div>
 
-            {/* Expanded detail — full width below */}
             {isExpanded && (
-                <TareaDetail
-                    tarea={tarea}
-                    eventoId={eventoId}
-                    currentFaseId={currentFaseId}
-                    todasLasFases={todasLasFases}
-                    onClose={onToggle}
-                />
+                <TemaBody tema={tema} eventoId={eventoId} done={done} />
             )}
         </div>
     )
 }
 
-// ─── TareaDetail ─────────────────────────────────────────────────────────────
+// ─── TemaBody ─────────────────────────────────────────────────────────────────
 
-function TareaDetail({ tarea, eventoId, currentFaseId, todasLasFases, onClose }: {
-    tarea: Tarea; eventoId: string
-    currentFaseId: string; todasLasFases: Fase[]
-    onClose: () => void
+function TemaBody({ tema, eventoId, done }: { tema: Tema; eventoId: string; done: number }) {
+    const [addingTarea, setAddingTarea] = useState(false)
+    const [addingAcuerdo, setAddingAcuerdo] = useState(false)
+
+    return (
+        <div style={st.temaBody}>
+            <div style={st.sectionLabel}>
+                Tareas <span style={st.countTag}>{done} de {tema.tareas.length}</span>
+            </div>
+            <Droppable droppableId={tema.id} type={`TAREA_${tema.id}`}>
+                {(provided) => (
+                    <div ref={provided.innerRef} {...provided.droppableProps} style={st.tareasTimeline}>
+                        {tema.tareas.map((tarea, idx) => (
+                            <Draggable key={tarea.id} draggableId={tarea.id} index={idx}>
+                                {(drag, snap) => (
+                                    <div
+                                        ref={drag.innerRef}
+                                        {...drag.draggableProps}
+                                        style={{
+                                            ...drag.draggableProps.style,
+                                            opacity: snap.isDragging ? 0.85 : 1,
+                                        }}
+                                    >
+                                        <TareaItem
+                                            tarea={tarea}
+                                            eventoId={eventoId}
+                                            dragHandleProps={drag.dragHandleProps}
+                                        />
+                                    </div>
+                                )}
+                            </Draggable>
+                        ))}
+                        {provided.placeholder}
+                    </div>
+                )}
+            </Droppable>
+            {addingTarea ? (
+                <AddTareaForm eventoId={eventoId} temaId={tema.id} onDone={() => setAddingTarea(false)} />
+            ) : (
+                <button onClick={() => setAddingTarea(true)} style={st.addInlineSm}>+ Agregar tarea</button>
+            )}
+
+            <div style={{ ...st.sectionLabel, marginTop: '1.25rem' }}>
+                Acuerdos <span style={st.countTag}>{tema.acuerdos.length} {tema.acuerdos.length === 1 ? 'registro' : 'registros'}</span>
+            </div>
+            {tema.acuerdos.length === 0 && (
+                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontStyle: 'italic', marginBottom: '0.5rem' }}>
+                    Sin acuerdos registrados.
+                </div>
+            )}
+            {tema.acuerdos.map((acuerdo) => (
+                <AcuerdoRow key={acuerdo.id} acuerdo={acuerdo} eventoId={eventoId} />
+            ))}
+            {addingAcuerdo ? (
+                <AddAcuerdoForm eventoId={eventoId} temaId={tema.id} onDone={() => setAddingAcuerdo(false)} />
+            ) : (
+                <button onClick={() => setAddingAcuerdo(true)} style={st.addInlineSm}>+ Agregar acuerdo</button>
+            )}
+        </div>
+    )
+}
+
+// ─── TareaItem ────────────────────────────────────────────────────────────────
+
+function TareaItem({
+    tarea, eventoId, dragHandleProps,
+}: {
+    tarea: Tarea
+    eventoId: string
+    dragHandleProps?: DraggableProvidedDragHandleProps | null
 }) {
-    const [isPending, startTransition] = useTransition()
-    const [nombre, setNombre] = useState(tarea.nombre)
-    const [estado, setEstado] = useState(tarea.estado)
-    const [tipo, setTipo] = useState(tarea.tipo)
-    const [fecha, setFecha] = useState(tarea.fecha ?? '')
-    const [resumen, setResumen] = useState(tarea.resumen ?? '')
-    const [faseId, setFaseId] = useState(currentFaseId)
-    const [newAcuerdo, setNewAcuerdo] = useState('')
+    const [editing, setEditing] = useState(false)
     const [confirmDelete, setConfirmDelete] = useState(false)
+    const [, startTr] = useTransition()
 
-    function handleSave() {
-        startTransition(async () => {
-            await updateTarea(tarea.id, eventoId, {
-                nombre,
-                estado: estado as 'pendiente' | 'en_curso' | 'completada',
-                tipo: tipo as 'reunion' | 'entregable' | 'decision' | 'pago',
-                fecha: fecha || null,
-                resumen: resumen || null,
-                ...(faseId !== currentFaseId ? { fase_id: faseId } : {}),
-            })
-            onClose()
+    function cycle() {
+        const next = nextEstado(tarea.estado)
+        startTr(async () => {
+            await updateTarea(tarea.id, eventoId, { estado: next })
         })
     }
-
-    function handleAddAcuerdo() {
-        if (!newAcuerdo.trim()) return
-        startTransition(async () => {
-            await createAcuerdo(tarea.id, eventoId, newAcuerdo.trim())
-            setNewAcuerdo('')
+    function saveNombre(value: string) {
+        const v = value.trim()
+        if (!v || v === tarea.nombre) { setEditing(false); return }
+        startTr(async () => {
+            await updateTarea(tarea.id, eventoId, { nombre: v })
+            setEditing(false)
         })
     }
-
-    function handleDeleteAcuerdo(id: string) {
-        startTransition(async () => { await deleteAcuerdo(id, eventoId) })
+    function handleDelete() {
+        startTr(async () => { await deleteTarea(tarea.id, eventoId) })
     }
+
+    const estadoLabel = tarea.estado === 'completada' ? 'Completada' : tarea.estado === 'en_curso' ? 'En curso' : 'Pendiente'
+
+    return (
+        <div style={st.tarea} data-estado={tarea.estado}>
+            <div {...(dragHandleProps as object)} style={st.tareaDragHandle} title="Arrastrar para reordenar">⠿</div>
+            <span
+                onClick={cycle}
+                style={{
+                    ...st.tareaNode,
+                    ...(tarea.estado === 'en_curso' ? st.tareaNodeEnCurso : {}),
+                    ...(tarea.estado === 'completada' ? st.tareaNodeCompletada : {}),
+                }}
+                title="Click para cambiar estado"
+            >
+                {tarea.estado === 'en_curso' && <span style={st.tareaNodeDot} />}
+                {tarea.estado === 'completada' && <span style={st.tareaNodeCheck}>✓</span>}
+            </span>
+            {editing ? (
+                <InlineInput initial={tarea.nombre} onSave={saveNombre} onCancel={() => setEditing(false)} fontSize="0.9rem" />
+            ) : (
+                <div
+                    style={{
+                        ...st.tareaName,
+                        ...(tarea.estado === 'completada' ? st.tareaNameCompletada : {}),
+                        cursor: 'pointer',
+                    }}
+                    onClick={() => setEditing(true)}
+                    title="Click para editar nombre"
+                >
+                    {tarea.nombre}
+                </div>
+            )}
+            <div style={st.tareaStatus}>{estadoLabel}</div>
+            {confirmDelete ? (
+                <div style={st.deleteConfirmInline}>
+                    <button onClick={handleDelete} style={st.confirmYesXs}>Sí</button>
+                    <button onClick={() => setConfirmDelete(false)} style={st.confirmNoXs}>No</button>
+                </div>
+            ) : (
+                <button onClick={() => setConfirmDelete(true)} style={st.tareaDeleteBtn} title="Eliminar tarea">×</button>
+            )}
+        </div>
+    )
+}
+
+// ─── AcuerdoRow ──────────────────────────────────────────────────────────────
+
+function AcuerdoRow({ acuerdo, eventoId }: { acuerdo: Acuerdo; eventoId: string }) {
+    const [confirmDelete, setConfirmDelete] = useState(false)
+    const [, startTr] = useTransition()
 
     function handleDelete() {
-        startTransition(async () => { await deleteTarea(tarea.id, eventoId) })
+        startTr(async () => { await deleteAcuerdo(acuerdo.id, eventoId) })
     }
 
     return (
-        <div style={styles.tareaDetail}>
-            <div style={styles.detailGrid}>
-                {/* Nombre */}
-                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                    <label className="form-label">Nombre</label>
-                    <input value={nombre} onChange={e => setNombre(e.target.value)} className="form-input" />
+        <div style={st.acuerdo}>
+            <div style={st.acuerdoDate}>{formatAcuerdoDate(acuerdo.created_at)}</div>
+            <div style={st.acuerdoText}>{acuerdo.texto}</div>
+            {confirmDelete ? (
+                <div style={st.deleteConfirmInline}>
+                    <button onClick={handleDelete} style={st.confirmYesXs}>Sí</button>
+                    <button onClick={() => setConfirmDelete(false)} style={st.confirmNoXs}>No</button>
                 </div>
-                {/* Tipo */}
-                <div className="form-group">
-                    <label className="form-label">Tipo</label>
-                    <select value={tipo} onChange={e => setTipo(e.target.value)} className="form-input">
-                        {TIPO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                </div>
-                {/* Estado */}
-                <div className="form-group">
-                    <label className="form-label">Estado</label>
-                    <select value={estado} onChange={e => setEstado(e.target.value)} className="form-input">
-                        {ESTADO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                </div>
-                {/* Fecha */}
-                <div className="form-group">
-                    <label className="form-label">Fecha</label>
-                    <input
-                        type="date"
-                        value={fecha}
-                        onChange={e => setFecha(e.target.value)}
-                        className="form-input"
-                    />
-                </div>
-                {/* Fase */}
-                <div className="form-group">
-                    <label className="form-label">Fase</label>
-                    <select
-                        value={faseId}
-                        onChange={e => setFaseId(e.target.value)}
-                        className="form-input"
-                        style={{ fontWeight: faseId !== currentFaseId ? 600 : undefined, color: faseId !== currentFaseId ? 'var(--color-gold-dark)' : undefined }}
-                    >
-                        {todasLasFases.map(f => (
-                            <option key={f.id} value={f.id}>{f.nombre}</option>
-                        ))}
-                    </select>
-                    {faseId !== currentFaseId && (
-                        <p style={{ fontSize: '0.72rem', color: 'var(--color-gold-dark)', marginTop: '0.2rem' }}>
-                            ↳ Se moverá a &quot;{todasLasFases.find(f => f.id === faseId)?.nombre}&quot; al guardar
-                        </p>
-                    )}
-                </div>
-                {/* Resumen */}
-                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                    <label className="form-label">Resumen / notas</label>
-                    <textarea value={resumen} onChange={e => setResumen(e.target.value)} className="form-input" rows={3} style={{ resize: 'vertical', fontFamily: 'var(--font-sans)', fontSize: '0.9rem' }} placeholder="Notas sobre esta tarea…" />
-                </div>
-            </div>
-
-            {/* Actions row */}
-            <div style={styles.detailActions}>
-                <div>
-                    {confirmDelete ? (
-                        <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--color-error)' }}>¿Eliminar?</span>
-                            <button onClick={handleDelete} disabled={isPending} style={styles.confirmYesSmall}>Sí</button>
-                            <button onClick={() => setConfirmDelete(false)} style={styles.confirmNoSmall}>No</button>
-                        </span>
-                    ) : (
-                        <button onClick={() => setConfirmDelete(true)} className="btn-ghost" style={{ fontSize: '0.78rem', color: 'var(--color-error)', borderColor: 'rgba(200,75,75,0.2)', padding: '0.3rem 0.75rem' }}>
-                            Eliminar tarea
-                        </button>
-                    )}
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button onClick={onClose} className="btn-ghost" style={{ fontSize: '0.8rem', padding: '0.4rem 0.9rem' }}>Cancelar</button>
-                    <button onClick={handleSave} disabled={isPending} className="btn-gold" style={{ fontSize: '0.8rem', padding: '0.4rem 1rem' }}>
-                        {isPending ? 'Guardando…' : 'Guardar cambios'}
-                    </button>
-                </div>
-            </div>
-
-            {/* Acuerdos */}
-            <div style={styles.acuerdosSection}>
-                <p style={styles.acuerdosTitle}>📝 Acuerdos</p>
-                {tarea.acuerdos.length === 0 && (
-                    <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontStyle: 'italic', marginBottom: '0.5rem' }}>Sin acuerdos registrados.</p>
-                )}
-                {tarea.acuerdos.map((a: Acuerdo) => (
-                    <AcuerdoItem key={a.id} acuerdo={a} eventoId={eventoId} />
-                ))}
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    <input
-                        value={newAcuerdo}
-                        onChange={e => setNewAcuerdo(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddAcuerdo() } }}
-                        className="form-input"
-                        style={{ fontSize: '0.85rem', flex: 1 }}
-                        placeholder="Escribí un acuerdo y presioná Enter…"
-                    />
-                    <button onClick={handleAddAcuerdo} disabled={isPending || !newAcuerdo.trim()} className="btn-gold" style={{ fontSize: '0.8rem', padding: '0.4rem 0.9rem', whiteSpace: 'nowrap' }}>
-                        + Agregar
-                    </button>
-                </div>
-            </div>
+            ) : (
+                <button onClick={() => setConfirmDelete(true)} style={{ ...st.tareaDeleteBtn, marginLeft: 'auto' }} title="Eliminar acuerdo">×</button>
+            )}
         </div>
     )
 }
 
-// ─── AcuerdoItem ──────────────────────────────────────────────────────────────
+// ─── Status pill ─────────────────────────────────────────────────────────────
 
-function AcuerdoItem({ acuerdo, eventoId }: { acuerdo: Acuerdo; eventoId: string }) {
-    const [isPending, startTransition] = useTransition()
+function StatusPill({ estado, pct }: { estado: 'pendiente' | 'en_curso' | 'completada'; pct: number }) {
+    if (estado === 'pendiente') {
+        return (
+            <div style={{ ...st.pill, ...st.pillPendiente }}>
+                <span style={{ ...st.pillDot, background: 'var(--color-text-muted)' }} />
+                Pendiente
+            </div>
+        )
+    }
+    if (estado === 'completada') {
+        return (
+            <div style={{ ...st.pill, ...st.pillCompletado }}>
+                <span style={{ ...st.pillDot, background: '#4B7C5C' }} />
+                Completado
+            </div>
+        )
+    }
     return (
-        <div style={styles.acuerdoItem}>
-            <span style={{ fontSize: '0.85rem', flex: 1 }}>· {acuerdo.texto}</span>
-            <button
-                onClick={() => startTransition(async () => { await deleteAcuerdo(acuerdo.id, eventoId) })}
-                disabled={isPending}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', padding: '0', lineHeight: 1 }}
-                title="Eliminar acuerdo"
-            >×</button>
+        <div style={{ ...st.pill, ...st.pillCurso }}>
+            <span style={{ ...st.pillDot, background: 'var(--color-gold)' }} />
+            En curso · {pct}%
         </div>
     )
 }
 
-// ─── AddTareaForm ─────────────────────────────────────────────────────────────
+// ─── Inline editors ──────────────────────────────────────────────────────────
 
-function AddTareaForm({ faseId, eventoId, onDone }: { faseId: string; eventoId: string; onDone: () => void }) {
-    const [isPending, startTransition] = useTransition()
+function InlineInput({
+    initial, onSave, onCancel, fontSize, fontWeight,
+}: {
+    initial: string
+    onSave: (v: string) => void
+    onCancel: () => void
+    fontSize?: string
+    fontWeight?: number
+}) {
+    const ref = useRef<HTMLInputElement>(null)
+    useEffect(() => { ref.current?.focus(); ref.current?.select() }, [])
+    return (
+        <input
+            ref={ref}
+            defaultValue={initial}
+            onBlur={(e) => onSave(e.target.value)}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() }
+                else if (e.key === 'Escape') onCancel()
+            }}
+            style={{
+                ...st.inlineInput,
+                fontSize: fontSize ?? '0.95rem',
+                fontWeight: fontWeight ?? 400,
+            }}
+        />
+    )
+}
+
+function InlineTextarea({
+    initial, onSave, onCancel, placeholder,
+}: {
+    initial: string
+    onSave: (v: string) => void
+    onCancel: () => void
+    placeholder?: string
+}) {
+    const ref = useRef<HTMLTextAreaElement>(null)
+    useEffect(() => { ref.current?.focus(); ref.current?.select() }, [])
+    return (
+        <textarea
+            ref={ref}
+            defaultValue={initial}
+            placeholder={placeholder}
+            onBlur={(e) => onSave(e.target.value)}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); (e.target as HTMLTextAreaElement).blur() }
+                else if (e.key === 'Escape') onCancel()
+            }}
+            rows={2}
+            style={st.inlineTextarea}
+        />
+    )
+}
+
+function FechasEditor({
+    inicio, fin, onSave, onCancel,
+}: {
+    inicio: string | null
+    fin: string | null
+    onSave: (a: string, b: string) => void
+    onCancel: () => void
+}) {
+    const [a, setA] = useState(inicio ?? '')
+    const [b, setB] = useState(fin ?? '')
+    return (
+        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <input type="date" value={a} onChange={(e) => setA(e.target.value)} style={st.deadlineInput} />
+            <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>→</span>
+            <input type="date" value={b} onChange={(e) => setB(e.target.value)} style={st.deadlineInput} />
+            <button onClick={() => onSave(a, b)} style={st.confirmYesXs}>Guardar</button>
+            <button onClick={onCancel} style={st.confirmNoXs}>Cancelar</button>
+        </div>
+    )
+}
+
+// ─── Add forms ───────────────────────────────────────────────────────────────
+
+function AddTemaForm({ eventoId, faseId, onDone }: { eventoId: string; faseId: string; onDone: (newTemaId?: string) => void }) {
     const [nombre, setNombre] = useState('')
-    const [tipo, setTipo] = useState<'reunion' | 'entregable' | 'decision' | 'pago'>('reunion')
-    const [fecha, setFecha] = useState('')
+    const [, startTr] = useTransition()
+    const ref = useRef<HTMLInputElement>(null)
+    useEffect(() => { ref.current?.focus() }, [])
 
-    const today = new Date().toISOString().split('T')[0]
-
-    function handleSubmit() {
-        if (!nombre.trim()) return
-        startTransition(async () => {
-            await createTarea(faseId, eventoId, { nombre: nombre.trim(), tipo, fecha: fecha || null })
-            setNombre(''); setFecha(''); onDone()
+    function submit() {
+        const v = nombre.trim()
+        if (!v) { onDone(); return }
+        startTr(async () => {
+            const id = await createTema(faseId, eventoId, { nombre: v })
+            onDone(id)
         })
     }
 
     return (
-        <div style={styles.addForm}>
-            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                <div className="form-group" style={{ flex: 2, minWidth: '160px' }}>
-                    <label className="form-label">Nombre de la tarea</label>
-                    <input autoFocus value={nombre} onChange={e => setNombre(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }} className="form-input" style={{ fontSize: '0.88rem' }} placeholder="Reunión inicial…" />
-                </div>
-                <div className="form-group" style={{ minWidth: '130px' }}>
-                    <label className="form-label">Tipo</label>
-                    <select value={tipo} onChange={e => setTipo(e.target.value as 'reunion' | 'entregable' | 'decision' | 'pago')} className="form-input" style={{ fontSize: '0.88rem' }}>
-                        {TIPO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                </div>
-                <div className="form-group" style={{ minWidth: '120px' }}>
-                    <label className="form-label">Fecha</label>
-                    <input type="date" value={fecha} min={today} onChange={e => setFecha(e.target.value)} className="form-input" style={{ fontSize: '0.88rem' }} />
-                </div>
-                <button onClick={handleSubmit} disabled={isPending || !nombre.trim()} className="btn-gold" style={{ fontSize: '0.82rem', padding: '0.5rem 1rem', marginBottom: '0' }}>
-                    {isPending ? '…' : 'Agregar'}
-                </button>
-                <button onClick={onDone} className="btn-ghost" style={{ fontSize: '0.82rem', padding: '0.5rem 0.75rem' }}>Cancelar</button>
-            </div>
+        <div style={{ padding: '0.85rem 0.5rem', borderTop: '1px dashed var(--color-border)' }}>
+            <input
+                ref={ref}
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                onBlur={submit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); submit() }
+                    else if (e.key === 'Escape') onDone()
+                }}
+                placeholder="Nombre del nuevo tema y Enter…"
+                style={{ ...st.inlineInput, fontSize: '0.95rem', fontWeight: 600 }}
+            />
         </div>
     )
 }
 
-// ─── AddFaseForm ──────────────────────────────────────────────────────────────
-
-function AddFaseForm({ eventoId, onDone, fasesExistentes }: { eventoId: string; onDone: () => void; fasesExistentes: Fase[] }) {
-    const [isPending, startTransition] = useTransition()
+function AddTareaForm({ eventoId, temaId, onDone }: { eventoId: string; temaId: string; onDone: () => void }) {
     const [nombre, setNombre] = useState('')
-    const [descripcion, setDescripcion] = useState('')
-    // Position: 'end' = after all, or a faseId meaning 'insert before this fase'
-    const [posicion, setPosicion] = useState<string>('end')
+    const [, startTr] = useTransition()
+    const ref = useRef<HTMLInputElement>(null)
+    useEffect(() => { ref.current?.focus() }, [])
 
-    function handleSubmit() {
-        if (!nombre.trim()) return
-        startTransition(async () => {
-            await createFaseEnPosicion(eventoId, nombre.trim(), descripcion, posicion, fasesExistentes)
+    function submit() {
+        const v = nombre.trim()
+        if (!v) { onDone(); return }
+        startTr(async () => {
+            await createTarea(temaId, eventoId, { nombre: v })
             onDone()
         })
     }
 
     return (
-        <div className="card" style={{ padding: '1.25rem', border: '1.5px dashed var(--color-gold-light)' }}>
-            <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-gold-dark)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.75rem' }}>Nueva fase</p>
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                <div className="form-group" style={{ flex: 1, minWidth: '180px' }}>
-                    <label className="form-label">Nombre</label>
-                    <input autoFocus value={nombre} onChange={e => setNombre(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }} className="form-input" placeholder="Planificación inicial…" />
-                </div>
-                <div className="form-group" style={{ flex: 2, minWidth: '200px' }}>
-                    <label className="form-label">Descripción (opcional)</label>
-                    <input value={descripcion} onChange={e => setDescripcion(e.target.value)} className="form-input" placeholder="Descripción breve…" />
-                </div>
-                {fasesExistentes.length > 0 && (
-                    <div className="form-group" style={{ minWidth: '180px' }}>
-                        <label className="form-label">Posición</label>
-                        <select value={posicion} onChange={e => setPosicion(e.target.value)} className="form-input" style={{ fontSize: '0.85rem' }}>
-                            {fasesExistentes.map((f, idx) => (
-                                <option key={f.id} value={f.id}>Antes de: {f.nombre}</option>
-                            ))}
-                            <option value="end">Al final</option>
-                        </select>
-                    </div>
-                )}
-                <button onClick={handleSubmit} disabled={isPending || !nombre.trim()} className="btn-gold" style={{ fontSize: '0.85rem', padding: '0.55rem 1.1rem' }}>
-                    {isPending ? 'Creando…' : 'Crear fase'}
-                </button>
-                <button onClick={onDone} className="btn-ghost" style={{ fontSize: '0.85rem', padding: '0.55rem 0.9rem' }}>Cancelar</button>
-            </div>
+        <div style={{ padding: '0.4rem 0.75rem 0.4rem 1.7rem' }}>
+            <input
+                ref={ref}
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                onBlur={submit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); submit() }
+                    else if (e.key === 'Escape') onDone()
+                }}
+                placeholder="Nombre de la nueva tarea…"
+                style={{ ...st.inlineInput, fontSize: '0.9rem' }}
+            />
         </div>
     )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+function AddAcuerdoForm({ eventoId, temaId, onDone }: { eventoId: string; temaId: string; onDone: () => void }) {
+    const [texto, setTexto] = useState('')
+    const [, startTr] = useTransition()
+    const ref = useRef<HTMLInputElement>(null)
+    useEffect(() => { ref.current?.focus() }, [])
 
-const styles: Record<string, React.CSSProperties> = {
-    faseCard: { padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0' },
-    faseHeader: { marginBottom: '0.75rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' },
-    faseDragHandle: { cursor: 'grab', fontSize: '1.1rem', color: 'var(--color-text-muted)', paddingTop: '0.15rem', flexShrink: 0, userSelect: 'none', opacity: 0.5, lineHeight: 1 },
-    tareaDragHandle: { cursor: 'grab', fontSize: '0.9rem', color: 'var(--color-text-muted)', padding: '0 0.4rem 0 0.6rem', display: 'flex', alignItems: 'center', flexShrink: 0, userSelect: 'none', opacity: 0.4 },
-    faseEditRow: { display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', flex: 1 },
-    faseTitleRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', flex: 1 },
-    faseNombre: { fontFamily: 'var(--font-serif)', fontSize: '1.05rem', fontWeight: 600, color: 'var(--color-text)' },
-    faseDesc: { fontSize: '0.82rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' },
-    faseMeta: { display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0 },
-    faseCounter: { fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', background: 'var(--color-cream-dark)', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap' },
-    tareasList: { display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.75rem' },
-    tareaRow: { borderWidth: '1px', borderStyle: 'solid', borderRadius: 'var(--radius-sm)', overflow: 'hidden', backgroundColor: 'var(--color-white)', transition: 'border-color 0.2s', display: 'flex', alignItems: 'stretch' },
-    tareaRowBtn: { display: 'flex', alignItems: 'center', gap: '0.6rem', flex: 1, padding: '0.65rem 0.85rem 0.65rem 0', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' },
-    tareaIcon: { fontSize: '1rem', flexShrink: 0 },
-    tareaNombre: { fontSize: '0.88rem', fontWeight: 500, color: 'var(--color-text)', flex: 1 },
-    estadoBadge: { fontSize: '0.68rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0.15rem 0.55rem', borderRadius: '20px', whiteSpace: 'nowrap' },
-    tareaFecha: { fontSize: '0.75rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' },
-    tareaDetail: { padding: '1rem', backgroundColor: 'var(--color-cream)', borderTop: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' },
-    detailGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' },
-    detailActions: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.5rem', borderTop: '1px solid var(--color-border)' },
-    acuerdosSection: { backgroundColor: 'var(--color-white)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' },
-    acuerdosTitle: { fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-muted)', marginBottom: '0.25rem' },
-    acuerdoItem: { display: 'flex', alignItems: 'flex-start', gap: '0.5rem', padding: '0.3rem 0', borderBottom: '1px solid var(--color-cream-dark)' },
-    addTareaBtn: { fontSize: '0.78rem', padding: '0.35rem 0.75rem', gap: '0.35rem', alignSelf: 'flex-start', color: 'var(--color-gold-dark)', borderColor: 'var(--color-gold-light)' },
-    addFaseBtn: { fontSize: '0.85rem', padding: '0.65rem', gap: '0.4rem', justifyContent: 'center', borderStyle: 'dashed' },
-    addForm: { backgroundColor: 'var(--color-cream)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', padding: '0.85rem', marginTop: '0.5rem' },
-    iconBtn: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: '0.2rem', display: 'flex', alignItems: 'center' },
-    confirmSmall: { display: 'flex', alignItems: 'center', gap: '0.35rem' },
-    confirmYesSmall: { fontSize: '0.72rem', padding: '0.2rem 0.55rem', background: 'var(--color-error)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontFamily: 'var(--font-sans)' },
-    confirmNoSmall: { fontSize: '0.72rem', padding: '0.2rem 0.55rem', background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: '4px', cursor: 'pointer', fontFamily: 'var(--font-sans)' },
+    function submit() {
+        const v = texto.trim()
+        if (!v) { onDone(); return }
+        startTr(async () => {
+            await createAcuerdo(temaId, eventoId, v)
+            onDone()
+        })
+    }
+
+    return (
+        <div style={{ padding: '0.5rem 0' }}>
+            <input
+                ref={ref}
+                value={texto}
+                onChange={(e) => setTexto(e.target.value)}
+                onBlur={submit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); submit() }
+                    else if (e.key === 'Escape') onDone()
+                }}
+                placeholder="Acuerdo nuevo…"
+                style={{ ...st.inlineInput, fontSize: '0.9rem' }}
+            />
+        </div>
+    )
+}
+
+function AddFaseRow({ eventoId, fases }: { eventoId: string; fases: Fase[] }) {
+    const [open, setOpen] = useState(false)
+    const [nombre, setNombre] = useState('')
+    const [, startTr] = useTransition()
+
+    function submit() {
+        const v = nombre.trim()
+        if (!v) { setOpen(false); setNombre(''); return }
+        startTr(async () => {
+            await createFase(eventoId, { nombre: v })
+            setOpen(false); setNombre('')
+        })
+    }
+
+    if (!open) {
+        return (
+            <button onClick={() => setOpen(true)} style={st.addFaseBtn}>+ Agregar etapa</button>
+        )
+    }
+    void fases
+    return (
+        <div className="card" style={{ padding: '1.25rem' }}>
+            <input
+                autoFocus
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                onBlur={submit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); submit() }
+                    else if (e.key === 'Escape') { setOpen(false); setNombre('') }
+                }}
+                placeholder="Nombre de la etapa…"
+                style={{ ...st.inlineInput, fontSize: '1.1rem', fontWeight: 600 }}
+            />
+        </div>
+    )
+}
+
+// ─── Styles (mockup parity) ──────────────────────────────────────────────────
+
+const st: Record<string, React.CSSProperties> = {
+    fase: {
+        background: 'var(--color-white)',
+        border: '1px solid var(--color-border)',
+        borderRadius: '16px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03)',
+        padding: '1.75rem 2rem 0.5rem',
+        overflow: 'hidden',
+    },
+    faseHeader: {
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+        gap: '1rem',
+        paddingBottom: '1rem',
+        marginBottom: '0.5rem',
+        borderBottom: '1px solid var(--color-border)',
+        position: 'relative',
+        flexWrap: 'wrap',
+    },
+    faseHeaderRight: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.6rem',
+        paddingBottom: '2px',
+    },
+    faseEyebrow: {
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '0.7rem',
+        fontWeight: 500,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        color: 'var(--color-gold-dark)',
+    },
+    faseName: {
+        fontFamily: 'var(--font-sans)',
+        fontSize: '1.375rem',
+        fontWeight: 600,
+        marginTop: '0.25rem',
+        color: 'var(--color-text)',
+        letterSpacing: '-0.015em',
+        cursor: 'pointer',
+    },
+    faseDesc: {
+        fontSize: '0.875rem',
+        color: 'var(--color-text-muted)',
+        marginTop: '0.4rem',
+        lineHeight: 1.55,
+        maxWidth: '620px',
+        cursor: 'pointer',
+        minHeight: '1.25rem',
+    },
+    faseDates: {
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '0.8rem',
+        color: 'var(--color-text-muted)',
+        letterSpacing: '0.02em',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+    },
+    faseDeleteBtn: {
+        background: 'none', border: 'none', cursor: 'pointer',
+        color: 'var(--color-text-muted)',
+        fontSize: '1.2rem', lineHeight: 1, padding: '0.1rem 0.45rem',
+        borderRadius: '4px',
+    },
+    addFaseBtn: {
+        padding: '0.85rem 1.25rem',
+        background: 'transparent',
+        border: '1px dashed var(--color-gold)',
+        color: 'var(--color-gold-dark)',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '0.78rem',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        textAlign: 'center',
+    },
+    addInline: {
+        display: 'block',
+        margin: '0.5rem 0 0.75rem',
+        padding: '0.5rem 0.5rem',
+        background: 'transparent',
+        border: 'none',
+        color: 'var(--color-gold-dark)',
+        fontSize: '0.78rem',
+        fontFamily: 'var(--font-mono, monospace)',
+        cursor: 'pointer',
+        textAlign: 'left',
+    },
+    addInlineSm: {
+        display: 'block',
+        margin: '0.4rem 0 0',
+        padding: '0.3rem 0',
+        background: 'transparent',
+        border: 'none',
+        color: 'var(--color-gold-dark)',
+        fontSize: '0.75rem',
+        fontFamily: 'var(--font-mono, monospace)',
+        cursor: 'pointer',
+        textAlign: 'left',
+    },
+    temasList: {
+        display: 'flex',
+        flexDirection: 'column',
+    },
+    tema: {},
+    temaRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.85rem',
+        padding: '1.1rem 0.5rem',
+        userSelect: 'none',
+    },
+    temaDragHandle: {
+        cursor: 'grab', fontSize: '0.95rem',
+        color: 'var(--color-text-muted)', opacity: 0.4,
+        flexShrink: 0, lineHeight: 1, userSelect: 'none',
+    },
+    temaName: {
+        fontFamily: 'var(--font-sans)',
+        fontSize: '1rem',
+        fontWeight: 600,
+        color: 'var(--color-text)',
+        letterSpacing: '-0.01em',
+    },
+    temaDesc: {
+        fontSize: '0.85rem',
+        color: 'var(--color-text-muted)',
+        marginTop: '0.2rem',
+        lineHeight: 1.5,
+        minHeight: '1rem',
+    },
+    temaDeadline: {
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '0.75rem',
+        color: 'var(--color-text)',
+        background: 'var(--color-cream-dark)',
+        padding: '0.3rem 0.7rem',
+        borderRadius: '6px',
+        whiteSpace: 'nowrap',
+        letterSpacing: '0.02em',
+        border: '1px solid var(--color-border)',
+        cursor: 'pointer',
+        flexShrink: 0,
+    },
+    deadlineInput: {
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '0.75rem',
+        padding: '0.25rem 0.5rem',
+        borderRadius: '6px',
+        border: '1px solid var(--color-gold)',
+        background: 'var(--color-white)',
+    },
+    chevronBtn: {
+        background: 'none', border: 'none', cursor: 'pointer',
+        color: 'var(--color-text-muted)', padding: '0.1rem',
+        display: 'flex', alignItems: 'center', flexShrink: 0,
+    },
+    chevron: { transition: 'transform 0.2s ease' },
+    temaDeleteBtn: {
+        background: 'none', border: 'none', cursor: 'pointer',
+        color: 'var(--color-text-muted)',
+        fontSize: '1.1rem', lineHeight: 1, padding: '0.1rem 0.4rem',
+        borderRadius: '4px', flexShrink: 0,
+    },
+    deleteConfirmInline: {
+        display: 'flex', gap: '0.25rem', alignItems: 'center',
+    },
+    confirmYes: {
+        fontSize: '0.72rem', padding: '0.3rem 0.65rem',
+        background: 'var(--color-error)', color: 'white',
+        border: 'none', borderRadius: '4px', cursor: 'pointer',
+    },
+    confirmNo: {
+        fontSize: '0.72rem', padding: '0.3rem 0.65rem',
+        background: 'transparent', color: 'var(--color-text-muted)',
+        border: '1px solid var(--color-border)', borderRadius: '4px', cursor: 'pointer',
+    },
+    confirmYesXs: {
+        fontSize: '0.65rem', padding: '0.15rem 0.4rem',
+        background: 'var(--color-error)', color: 'white',
+        border: 'none', borderRadius: '3px', cursor: 'pointer',
+    },
+    confirmNoXs: {
+        fontSize: '0.65rem', padding: '0.15rem 0.4rem',
+        background: 'transparent', color: 'var(--color-text-muted)',
+        border: '1px solid var(--color-border)', borderRadius: '3px', cursor: 'pointer',
+    },
+    pill: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.4rem',
+        fontSize: '0.75rem',
+        fontWeight: 500,
+        padding: '0.3rem 0.75rem',
+        borderRadius: '99px',
+        letterSpacing: '0.01em',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+    },
+    pillDot: { width: '6px', height: '6px', borderRadius: '50%' },
+    pillPendiente: {
+        background: 'var(--color-cream-dark)',
+        color: 'var(--color-text-muted)',
+        border: '1px solid var(--color-border)',
+    },
+    pillCurso: {
+        background: 'rgba(201, 168, 76, 0.14)',
+        color: 'var(--color-gold-dark)',
+    },
+    pillCompletado: {
+        background: 'rgba(75, 124, 92, 0.12)',
+        color: '#4B7C5C',
+    },
+    temaBody: {
+        padding: '0.5rem 0.5rem 1.5rem 1.75rem',
+    },
+    sectionLabel: {
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '0.7rem',
+        fontWeight: 500,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        color: 'var(--color-text-muted)',
+        marginBottom: '0.85rem',
+        display: 'flex', alignItems: 'baseline', gap: '0.6rem',
+    },
+    countTag: {
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '0.7rem',
+        color: 'var(--color-text-faint, #B8B2A4)',
+        fontWeight: 400,
+        textTransform: 'none',
+        letterSpacing: '0.02em',
+    },
+    tareasTimeline: {
+        position: 'relative',
+    },
+    tarea: {
+        display: 'grid',
+        gridTemplateColumns: '0.85rem 1.2rem 1fr auto auto',
+        gap: '0.6rem',
+        alignItems: 'center',
+        padding: '0.55rem 0.4rem',
+        borderRadius: '6px',
+    },
+    tareaDragHandle: {
+        cursor: 'grab', fontSize: '0.8rem',
+        color: 'var(--color-text-muted)', opacity: 0.35,
+        userSelect: 'none', lineHeight: 1,
+    },
+    tareaNode: {
+        width: '16px', height: '16px',
+        border: '1.5px solid #D6D0C2',
+        background: 'var(--color-white)',
+        borderRadius: '50%',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        position: 'relative',
+        flexShrink: 0,
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+    },
+    tareaNodeEnCurso: {
+        borderColor: 'var(--color-gold)',
+    },
+    tareaNodeDot: {
+        width: '8px', height: '8px',
+        background: 'var(--color-gold)',
+        borderRadius: '50%',
+    },
+    tareaNodeCompletada: {
+        borderColor: '#4B7C5C',
+        background: '#4B7C5C',
+    },
+    tareaNodeCheck: {
+        color: 'white', fontSize: '0.65rem', fontWeight: 700, lineHeight: 1,
+    },
+    tareaName: {
+        fontSize: '0.9rem',
+        color: 'var(--color-text)',
+    },
+    tareaNameCompletada: {
+        color: 'var(--color-text-muted)',
+        textDecoration: 'line-through',
+        textDecorationColor: 'rgba(122,122,122,0.4)',
+    },
+    tareaStatus: {
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '0.7rem',
+        color: 'var(--color-text-muted)',
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        fontWeight: 500,
+        whiteSpace: 'nowrap',
+    },
+    tareaDeleteBtn: {
+        background: 'none', border: 'none', cursor: 'pointer',
+        color: 'var(--color-text-muted)',
+        fontSize: '0.95rem', lineHeight: 1, padding: '0.1rem 0.35rem',
+        borderRadius: '4px', flexShrink: 0,
+    },
+    acuerdo: {
+        display: 'grid',
+        gridTemplateColumns: '60px 1fr auto',
+        gap: '1rem',
+        padding: '0.75rem 0',
+        borderBottom: '1px solid var(--color-border)',
+        fontSize: '0.875rem',
+        color: 'var(--color-text)',
+        lineHeight: 1.55,
+    },
+    acuerdoDate: {
+        fontFamily: 'var(--font-mono, monospace)',
+        color: 'var(--color-gold-dark)',
+        fontSize: '0.7rem',
+        fontWeight: 500,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        paddingTop: '0.2rem',
+        flexShrink: 0,
+    },
+    acuerdoText: { color: 'var(--color-text)' },
+    inlineInput: {
+        width: '100%',
+        background: 'var(--color-cream)',
+        border: '1px solid var(--color-gold)',
+        borderRadius: '4px',
+        padding: '0.3rem 0.5rem',
+        fontFamily: 'var(--font-sans)',
+        color: 'var(--color-text)',
+        outline: 'none',
+    },
+    inlineTextarea: {
+        width: '100%',
+        background: 'var(--color-cream)',
+        border: '1px solid var(--color-gold)',
+        borderRadius: '4px',
+        padding: '0.3rem 0.5rem',
+        fontFamily: 'var(--font-sans)',
+        fontSize: '0.85rem',
+        color: 'var(--color-text)',
+        outline: 'none',
+        resize: 'vertical',
+        marginTop: '0.2rem',
+    },
 }

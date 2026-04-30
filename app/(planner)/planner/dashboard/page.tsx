@@ -72,7 +72,6 @@ export default async function PlannerDashboardPage() {
         }
     }
 
-    // Fetch only events assigned to this planner
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: eventos } = await (supabase as any)
         .from('eventos')
@@ -85,8 +84,11 @@ export default async function PlannerDashboardPage() {
       planners ( nombre ),
       fases (
         nombre,
-        orden,
-        tareas ( id, completada )
+        position,
+        temas (
+          id,
+          tareas ( id, estado )
+        )
       )
     `)
         .eq('planner_id', planner.id)
@@ -95,11 +97,13 @@ export default async function PlannerDashboardPage() {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
+    type TareaRow = { id: string; estado: string }
+    type TemaRow = { id: string; tareas: TareaRow[] | null }
     type EventoRow = {
         id: string; nombre: string; tipo_evento: string; fecha_evento: string
         token_acceso: string
         planners: { nombre: string } | null
-        fases: { nombre: string; orden: number; tareas: { id: string; completada: boolean }[] | null }[] | null
+        fases: { nombre: string; position: number; temas: TemaRow[] | null }[] | null
     }
     const eventosList = (eventos ?? []) as EventoRow[]
 
@@ -108,13 +112,11 @@ export default async function PlannerDashboardPage() {
         const diasRestantes = Math.round(
             (fechaEvento.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
         )
-        const todasTareas = (e.fases ?? []).flatMap(
-            (f) => f.tareas ?? []
+        const todasTareas: TareaRow[] = (e.fases ?? []).flatMap(
+            (f) => (f.temas ?? []).flatMap((t) => t.tareas ?? [])
         )
         const totalTareas = todasTareas.length
-        const tareasCompletadas = todasTareas.filter(
-            (t: { id: string; completada: boolean }) => t.completada
-        ).length
+        const tareasCompletadas = todasTareas.filter((t) => t.estado === 'completada').length
         const porcentajeAvance = totalTareas > 0 ? Math.round((tareasCompletadas / totalTareas) * 100) : 0
         const plannerNombre =
             e.planners && !Array.isArray(e.planners)
@@ -122,12 +124,15 @@ export default async function PlannerDashboardPage() {
                 : null
 
         const fasesStats = (e.fases ?? [])
-            .sort((a, b) => a.orden - b.orden)
-            .map((f) => ({
-                nombre: f.nombre,
-                total: (f.tareas ?? []).length,
-                completadas: (f.tareas ?? []).filter((t: { id: string; completada: boolean }) => t.completada).length,
-            }))
+            .sort((a, b) => a.position - b.position)
+            .map((f) => {
+                const tareasFase: TareaRow[] = (f.temas ?? []).flatMap((t) => t.tareas ?? [])
+                return {
+                    nombre: f.nombre,
+                    total: tareasFase.length,
+                    completadas: tareasFase.filter((t) => t.estado === 'completada').length,
+                }
+            })
 
         const tipoEventoDisplay = e.tipo_evento.startsWith('custom_')
             ? customLabelByTipo.get(e.tipo_evento) ?? null
