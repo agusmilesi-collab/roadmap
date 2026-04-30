@@ -491,3 +491,22 @@ a:hover {
     align-self: start;
   }
 }
+
+/* ─── Fase card cliente (Progreso) — responsive ───────────────────────────────
+ *
+ * Mobile: padding lateral más chico, header en columna (descripción y fechas
+ * apiladas verticales en lugar de competir por el ancho).
+ */
+@media (max-width: 559px) {
+  .fase-cliente {
+    padding: 1.25rem 1.1rem 0.5rem !important;
+  }
+  .fase-cliente-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.5rem !important;
+  }
+  .fase-cliente-dates {
+    align-self: flex-start;
+  }
+}

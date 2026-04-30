@@ -65,15 +65,15 @@ export function ProgresoClienteTab({ fases }: Props) {
 
 function FaseCard({ fase, index }: { fase: EventoCliente['fases'][number]; index: number }) {
     return (
-        <div style={st.fase}>
-            <div style={st.faseHeader}>
+        <div className="fase-cliente" style={st.fase}>
+            <div className="fase-cliente-header" style={st.faseHeader}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={st.faseEyebrow}>Etapa {index + 1}</div>
                     <div style={st.faseName}>{fase.nombre}</div>
                     {fase.descripcion && <div style={st.faseDesc}>{fase.descripcion}</div>}
                 </div>
                 {(fase.fecha_inicio || fase.fecha_fin) && (
-                    <div style={st.faseDates}>{formatRangeMonths(fase.fecha_inicio, fase.fecha_fin)}</div>
+                    <div className="fase-cliente-dates" style={st.faseDates}>{formatRangeMonths(fase.fecha_inicio, fase.fecha_fin)}</div>
                 )}
             </div>
 
