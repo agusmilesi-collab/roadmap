@@ -12,7 +12,7 @@ interface NuevoEventoFormProps {
 
 const TIPOS: { value: TipoEvento; label: string }[] = [
     { value: 'boda', label: 'Boda' },
-    { value: 'quince', label: 'Quinceañera' },
+    { value: 'quince', label: 'Quince' },
     { value: 'cumple', label: 'Cumpleaños' },
     { value: 'baby_shower', label: 'Baby Shower' },
 ]

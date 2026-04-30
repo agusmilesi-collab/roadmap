@@ -21,7 +21,7 @@ export interface EventoConStats {
 }
 
 const TIPO_LABELS: Record<string, string> = {
-    boda: 'Boda', quince: 'Quinceañera', cumple: 'Cumpleaños', baby_shower: 'Baby Shower',
+    boda: 'Boda', quince: 'Quince', cumple: 'Cumpleaños', baby_shower: 'Baby Shower',
 }
 const TIPO_COLORS: Record<string, string> = {
     boda: '#C9A84C', quince: '#8A6DAE', cumple: '#4C8AC9', baby_shower: '#C96B8A',
@@ -69,94 +69,76 @@ export function EventCard({ evento, href, canDelete = true }: EventCardProps) {
     const editHref = href ?? `/eventos/${evento.id}`
 
     return (
-        <div className="card" style={st.card}>
-            {/* ── LEFT: main content ───────────────────────────────────────── */}
-            <div style={st.left}>
-                {/* Row 1: fecha + días · badge tipo */}
-                <div style={st.topRow}>
-                    <div style={st.topLeft}>
-                        <span style={{ color: diasColor, fontSize: '0.72rem', fontWeight: 500 }}>
-                            {fechaLabel}
-                            <span style={{ color: 'var(--color-text-muted)', margin: '0 0.3rem' }}>·</span>
-                            <strong>{diasLabel}</strong>
-                        </span>
-                        <Link href={editHref} style={st.nombre}>{evento.nombre}</Link>
-                    </div>
-                    <span style={{ ...st.tipoBadge, backgroundColor: tipoColor + '18', color: tipoColor, borderColor: tipoColor + '40' }}>
-                        {tipoLabel}
+        <div className="card evento-card" style={st.card}>
+            {/* ── Tipo badge (chico, lateral izquierdo) ───────────────────── */}
+            <span
+                className="evento-card-tipo"
+                style={{ ...st.tipoBadge, backgroundColor: tipoColor + '18', color: tipoColor, borderColor: tipoColor + '40' }}
+                title={tipoLabel}
+            >
+                {tipoLabel}
+            </span>
+
+            {/* ── Nombre + planner (col flex) ─────────────────────────────── */}
+            <div className="evento-card-nombre" style={st.nombreCol}>
+                <Link href={editHref} style={st.nombre}>{evento.nombre}</Link>
+                {evento.plannerNombre && (
+                    <span style={st.planner}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+                        </svg>
+                        {evento.plannerNombre}
                     </span>
-                </div>
-
-                {/* Row 2: segmented bar + planner */}
-                <div style={st.midRow}>
-                    <div style={st.barWrap}>
-                        {evento.fases.length > 0 ? (
-                            <>
-                                <div style={{ display: 'flex', gap: '3px', height: '5px', marginBottom: '4px' }}>
-                                    {evento.fases.map((f, i) => {
-                                        const pct = f.total === 0 ? 0 : Math.round((f.completadas / f.total) * 100)
-                                        const bg = f.total === 0
-                                            ? 'var(--color-cream-dark)'
-                                            : pct === 100 ? 'var(--color-olive)'
-                                                : pct > 0 ? 'var(--color-gold)'
-                                                    : 'var(--color-cream-dark)'
-                                        return (
-                                            <div key={i} title={`${f.nombre}: ${pct}%`}
-                                                style={{ flex: 1, backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden', position: 'relative' }}>
-                                                <div style={{ position: 'absolute', inset: 0, width: `${pct}%`, backgroundColor: bg, borderRadius: '99px', transition: 'width 0.4s ease' }} />
-                                            </div>
-                                        )
-                                    })}
-                                </div>
-                                <div style={{ display: 'flex', gap: '3px' }}>
-                                    {evento.fases.map((f, i) => (
-                                        <div key={i} style={{ flex: 1, minWidth: 0, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.6rem', color: 'var(--color-text-muted)' }}>
-                                            {f.nombre}
-                                        </div>
-                                    ))}
-                                </div>
-                            </>
-                        ) : (
-                            <div style={st.simpleBar}>
-                                <div style={{ ...st.simpleBarFill, width: `${evento.porcentajeAvance}%`, backgroundColor: evento.porcentajeAvance === 100 ? 'var(--color-olive)' : 'var(--color-gold)' }} />
-                            </div>
-                        )}
-                    </div>
-
-                    <div style={st.midRight}>
-                        <span style={st.pct}>
-                            {evento.porcentajeAvance}%
-                            <span style={st.pctCount}> ({evento.tareasCompletadas}/{evento.totalTareas})</span>
-                        </span>
-                        {evento.plannerNombre && (
-                            <span style={st.planner}>
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-                                </svg>
-                                {evento.plannerNombre}
-                            </span>
-                        )}
-                    </div>
-                </div>
+                )}
             </div>
 
-            {/* ── DIVIDER ──────────────────────────────────────────────────── */}
-            <div style={st.divider} />
+            {/* ── Fecha + días (col fija) ─────────────────────────────────── */}
+            <div className="evento-card-fecha" style={st.fechaCol}>
+                <span style={st.fechaLabel}>{fechaLabel}</span>
+                <span style={{ ...st.diasLabel, color: diasColor }}>{diasLabel}</span>
+            </div>
 
-            {/* ── RIGHT: icon buttons stacked vertically ──────────────────── */}
-            <div style={st.actions}>
-                {/* Link cliente */}
+            {/* ── Barra de avance ──────────────────────────────────────────── */}
+            <div className="evento-card-bar" style={st.barCol}>
+                {evento.fases.length > 0 ? (
+                    <div style={{ display: 'flex', gap: '2px', height: '5px' }}>
+                        {evento.fases.map((f, i) => {
+                            const pct = f.total === 0 ? 0 : Math.round((f.completadas / f.total) * 100)
+                            const bg = f.total === 0
+                                ? 'var(--color-cream-dark)'
+                                : pct === 100 ? 'var(--color-olive)'
+                                    : pct > 0 ? 'var(--color-gold)'
+                                        : 'var(--color-cream-dark)'
+                            return (
+                                <div key={i} title={`${f.nombre}: ${pct}%`}
+                                    style={{ flex: 1, backgroundColor: 'var(--color-cream-dark)', borderRadius: '99px', overflow: 'hidden', position: 'relative' }}>
+                                    <div style={{ position: 'absolute', inset: 0, width: `${pct}%`, backgroundColor: bg, borderRadius: '99px', transition: 'width 0.4s ease' }} />
+                                </div>
+                            )
+                        })}
+                    </div>
+                ) : (
+                    <div style={st.simpleBar}>
+                        <div style={{ ...st.simpleBarFill, width: `${evento.porcentajeAvance}%`, backgroundColor: evento.porcentajeAvance === 100 ? 'var(--color-olive)' : 'var(--color-gold)' }} />
+                    </div>
+                )}
+            </div>
+
+            {/* ── % avance ─────────────────────────────────────────────────── */}
+            <span className="evento-card-pct" style={st.pct}>
+                {evento.porcentajeAvance}%
+                <span style={st.pctCount}> ({evento.tareasCompletadas}/{evento.totalTareas})</span>
+            </span>
+
+            {/* ── Acciones (icons, horizontales) ──────────────────────────── */}
+            <div className="evento-card-actions" style={st.actions}>
                 <CopyIconButton url={clientUrl} />
-
-                {/* Editar */}
                 <Link href={editHref} style={st.iconBtn} title="Editar">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                     </svg>
                 </Link>
-
-                {/* Eliminar */}
                 {canDelete && (
                     confirmDelete ? (
                         <div style={st.confirmMini}>
@@ -167,7 +149,7 @@ export function EventCard({ evento, href, canDelete = true }: EventCardProps) {
                         </div>
                     ) : (
                         <button onClick={() => setConfirmDelete(true)} style={{ ...st.iconBtn, color: 'var(--color-error)' }} title="Eliminar">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
                             </svg>
                         </button>
@@ -218,49 +200,17 @@ function CopyIconButton({ url }: { url: string }) {
 
 const st: Record<string, React.CSSProperties> = {
     card: {
-        padding: '1.25rem 1rem 1.25rem 1.5rem',
+        padding: '0.6rem 0.85rem',
         display: 'flex',
         flexDirection: 'row',
-        gap: '0',
-        alignItems: 'stretch',
-    },
-    // Left content
-    left: {
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
+        alignItems: 'center',
         gap: '0.85rem',
-        minWidth: 0,
-        paddingRight: '1rem',
-    },
-    topRow: {
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: '0.75rem',
-    },
-    topLeft: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.2rem',
-        minWidth: 0,
-    },
-    nombre: {
-        fontFamily: 'var(--font-serif)',
-        fontSize: '1.05rem',
-        fontWeight: 600,
-        color: 'var(--color-text)',
-        textDecoration: 'none',
-        lineHeight: 1.3,
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        maxWidth: '420px',
-        display: 'block',
     },
     tipoBadge: {
-        display: 'inline-block',
-        fontSize: '0.62rem',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '0.6rem',
         fontWeight: 600,
         letterSpacing: '0.07em',
         textTransform: 'uppercase',
@@ -269,16 +219,56 @@ const st: Record<string, React.CSSProperties> = {
         border: '1px solid',
         whiteSpace: 'nowrap',
         flexShrink: 0,
-        alignSelf: 'flex-start',
+        minWidth: 70,
     },
-    midRow: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.75rem',
-    },
-    barWrap: {
+    nombreCol: {
         flex: 1,
         minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.1rem',
+    },
+    nombre: {
+        fontFamily: 'var(--font-serif)',
+        fontSize: '0.95rem',
+        fontWeight: 600,
+        color: 'var(--color-text)',
+        textDecoration: 'none',
+        lineHeight: 1.25,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        display: 'block',
+    },
+    planner: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.2rem',
+        fontSize: '0.68rem',
+        color: 'var(--color-text-muted)',
+        whiteSpace: 'nowrap',
+    },
+    fechaCol: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-end',
+        gap: '0.05rem',
+        flexShrink: 0,
+        minWidth: 90,
+    },
+    fechaLabel: {
+        fontSize: '0.7rem',
+        color: 'var(--color-text-muted)',
+        whiteSpace: 'nowrap',
+    },
+    diasLabel: {
+        fontSize: '0.78rem',
+        fontWeight: 700,
+        whiteSpace: 'nowrap',
+    },
+    barCol: {
+        flex: '0 0 140px',
+        minWidth: 100,
     },
     simpleBar: {
         height: '5px',
@@ -291,48 +281,28 @@ const st: Record<string, React.CSSProperties> = {
         borderRadius: '99px',
         transition: 'width 0.4s ease',
     },
-    midRight: {
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-end',
-        gap: '0.15rem',
-        flexShrink: 0,
-    },
     pct: {
         fontSize: '0.78rem',
         fontWeight: 600,
         color: 'var(--color-text)',
         whiteSpace: 'nowrap',
+        flexShrink: 0,
+        minWidth: 70,
+        textAlign: 'right',
     },
     pctCount: {
         fontWeight: 400,
         color: 'var(--color-text-muted)',
-        fontSize: '0.7rem',
+        fontSize: '0.68rem',
     },
-    planner: {
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '0.2rem',
-        fontSize: '0.7rem',
-        color: 'var(--color-text-muted)',
-        whiteSpace: 'nowrap',
-    },
-    // Divider
-    divider: {
-        width: '1px',
-        backgroundColor: 'var(--color-border)',
-        alignSelf: 'stretch',
-        flexShrink: 0,
-    },
-    // Right actions
     actions: {
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-evenly',
-        gap: '0.25rem',
-        paddingLeft: '0.85rem',
+        gap: '0.1rem',
         flexShrink: 0,
+        paddingLeft: '0.5rem',
+        borderLeft: '1px solid var(--color-border)',
     },
     iconBtn: {
         background: 'none',

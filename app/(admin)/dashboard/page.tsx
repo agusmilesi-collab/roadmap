@@ -114,6 +114,15 @@ export default async function DashboardPage() {
             tipoEventoDisplay,
         }
     })
+        .sort((a, b) => {
+            // Pasados al final, dentro de cada grupo cronológico:
+            // futuros: más cercano primero · pasados: más reciente primero
+            const aPasado = a.diasRestantes < 0
+            const bPasado = b.diasRestantes < 0
+            if (aPasado !== bPasado) return aPasado ? 1 : -1
+            if (aPasado) return b.diasRestantes - a.diasRestantes
+            return a.diasRestantes - b.diasRestantes
+        })
 
     return (
         <main style={styles.main}>
@@ -144,6 +153,12 @@ export default async function DashboardPage() {
                             <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="9" x2="15" y2="9" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="12" y2="17" />
                         </svg>
                         Plantillas
+                    </Link>
+                    <Link href="/simulador" style={styles.quickNavLink}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                        </svg>
+                        Simulador
                     </Link>
                 </div>
 
@@ -179,7 +194,21 @@ export default async function DashboardPage() {
                     </div>
                 ) : (
                     <div style={styles.eventsList}>
-                        {eventosConStats.map((evento) => (
+                        {eventosConStats.filter(e => e.diasRestantes >= 0).map((evento) => (
+                            <EventCard key={evento.id} evento={evento} />
+                        ))}
+                        {eventosConStats.some(e => e.diasRestantes < 0) && (
+                            <div style={styles.sectionDivider}>
+                                <span style={styles.sectionDividerLabel}>
+                                    Eventos realizados
+                                    <span style={styles.sectionDividerCount}>
+                                        · {eventosConStats.filter(e => e.diasRestantes < 0).length}
+                                    </span>
+                                </span>
+                                <span style={styles.sectionDividerLine} />
+                            </div>
+                        )}
+                        {eventosConStats.filter(e => e.diasRestantes < 0).map((evento) => (
                             <EventCard key={evento.id} evento={evento} />
                         ))}
                     </div>
@@ -262,7 +291,34 @@ const styles: Record<string, React.CSSProperties> = {
     eventsList: {
         display: 'flex',
         flexDirection: 'column',
-        gap: '1rem',
+        gap: '0.4rem',
+    },
+    sectionDivider: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.85rem',
+        margin: '1rem 0 0.25rem',
+    },
+    sectionDividerLabel: {
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '0.7rem',
+        fontWeight: 600,
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        color: 'var(--color-text-muted)',
+        whiteSpace: 'nowrap',
+        position: 'relative',
+        paddingRight: '0.85rem',
+    },
+    sectionDividerCount: {
+        color: 'var(--color-text-faint)',
+        fontWeight: 500,
+        marginLeft: '0.2rem',
+    },
+    sectionDividerLine: {
+        flex: 1,
+        height: 1,
+        background: 'var(--color-border)',
     },
     emptyState: {
         display: 'flex',

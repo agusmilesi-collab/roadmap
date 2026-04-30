@@ -152,6 +152,13 @@ export default async function PlannerDashboardPage() {
             fases: fasesStats,
             tipoEventoDisplay,
         }
+    }).sort((a, b) => {
+        // Pasados al final: futuros cronológico ASC · pasados cronológico DESC
+        const aPasado = a.diasRestantes < 0
+        const bPasado = b.diasRestantes < 0
+        if (aPasado !== bPasado) return aPasado ? 1 : -1
+        if (aPasado) return b.diasRestantes - a.diasRestantes
+        return a.diasRestantes - b.diasRestantes
     })
 
     return (
@@ -193,7 +200,26 @@ export default async function PlannerDashboardPage() {
                     </div>
                 ) : (
                     <div style={styles.eventsList}>
-                        {eventosConStats.map((evento) => (
+                        {eventosConStats.filter(e => e.diasRestantes >= 0).map((evento) => (
+                            <EventCard
+                                key={evento.id}
+                                evento={evento}
+                                href={`/planner/eventos/${evento.id}`}
+                                canDelete={false}
+                            />
+                        ))}
+                        {eventosConStats.some(e => e.diasRestantes < 0) && (
+                            <div style={styles.sectionDivider}>
+                                <span style={styles.sectionDividerLabel}>
+                                    Eventos realizados
+                                    <span style={styles.sectionDividerCount}>
+                                        · {eventosConStats.filter(e => e.diasRestantes < 0).length}
+                                    </span>
+                                </span>
+                                <span style={styles.sectionDividerLine} />
+                            </div>
+                        )}
+                        {eventosConStats.filter(e => e.diasRestantes < 0).map((evento) => (
                             <EventCard
                                 key={evento.id}
                                 evento={evento}
@@ -263,7 +289,32 @@ const styles: Record<string, React.CSSProperties> = {
     eventsList: {
         display: 'flex',
         flexDirection: 'column',
-        gap: '1rem',
+        gap: '0.4rem',
+    },
+    sectionDivider: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.85rem',
+        margin: '1rem 0 0.25rem',
+    },
+    sectionDividerLabel: {
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '0.7rem',
+        fontWeight: 600,
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        color: 'var(--color-text-muted)',
+        whiteSpace: 'nowrap',
+    },
+    sectionDividerCount: {
+        color: 'var(--color-text-faint)',
+        fontWeight: 500,
+        marginLeft: '0.2rem',
+    },
+    sectionDividerLine: {
+        flex: 1,
+        height: 1,
+        background: 'var(--color-border)',
     },
     emptyState: {
         display: 'flex',

@@ -92,7 +92,7 @@ export interface EventoData {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const TIPO_LABELS: Record<string, string> = {
-    boda: 'Boda', quince: 'Quinceañera', cumple: 'Cumpleaños', baby_shower: 'Baby Shower',
+    boda: 'Boda', quince: 'Quince', cumple: 'Cumpleaños', baby_shower: 'Baby Shower',
 }
 const TIPO_COLORS: Record<string, string> = {
     boda: '#C9A84C', quince: '#8A6DAE', cumple: '#4C8AC9', baby_shower: '#C96B8A',

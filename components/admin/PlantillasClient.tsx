@@ -39,7 +39,7 @@ interface PlantillaFase {
 
 const BASE_TIPOS_EVENTO = [
     { value: 'boda', defaultLabel: '💍 Boda' },
-    { value: 'quince', defaultLabel: '🌸 Quinceañera' },
+    { value: 'quince', defaultLabel: '🌸 Quince' },
     { value: 'cumple', defaultLabel: '🎂 Cumpleaños' },
     { value: 'baby_shower', defaultLabel: '🍼 Baby Shower' },
 ]

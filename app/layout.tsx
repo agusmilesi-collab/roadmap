@@ -3,7 +3,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'TMP Eventos',
-  description: 'Gestión de eventos sociales — bodas, quinceañeras, cumpleaños y baby showers.',
+  description: 'Gestión de eventos sociales — bodas, quinces, cumpleaños y baby showers.',
 }
 
 export default function RootLayout({

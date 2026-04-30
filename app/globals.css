@@ -439,3 +439,55 @@ a:hover {
     display: contents;
   }
 }
+
+/* ─── Event card — responsive ────────────────────────────────────────────────
+ *
+ * Desktop (≥ 560px): fila tipo tabla — todo en una sola línea.
+ *   [tipo] [nombre+planner] [fecha+días] [barra] [%] [actions]
+ *
+ * Mobile (< 560px): grid en 3 filas para que respire.
+ *   [tipo  | nombre.....   | actions]
+ *   [bar bar bar bar bar bar bar  ]
+ *   [fecha+días     ........   |  %]
+ */
+@media (max-width: 559px) {
+  .evento-card {
+    display: grid !important;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "tipo nombre actions"
+      "bar bar bar"
+      "fecha fecha pct";
+    column-gap: 0.6rem;
+    row-gap: 0.55rem;
+    padding: 0.7rem 0.85rem !important;
+    align-items: center;
+  }
+  .evento-card-tipo    { grid-area: tipo; align-self: center; }
+  .evento-card-nombre  { grid-area: nombre; min-width: 0; }
+  .evento-card-fecha {
+    grid-area: fecha;
+    flex-direction: row !important;
+    align-items: baseline !important;
+    gap: 0.4rem !important;
+    min-width: 0 !important;
+    justify-self: start;
+  }
+  .evento-card-bar {
+    grid-area: bar;
+    flex: 0 0 auto !important;
+    width: 100%;
+    min-width: 0 !important;
+  }
+  .evento-card-pct {
+    grid-area: pct;
+    min-width: 0 !important;
+    justify-self: end;
+  }
+  .evento-card-actions {
+    grid-area: actions;
+    padding-left: 0 !important;
+    border-left: none !important;
+    align-self: start;
+  }
+}
