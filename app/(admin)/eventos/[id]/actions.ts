@@ -55,6 +55,17 @@ export async function deleteFase(id: string, eventoId: string) {
     revalidate(eventoId)
 }
 
+export async function reorderFases(
+    eventoId: string,
+    items: { id: string; position: number }[]
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    await Promise.all(items.map(({ id, position }) => db.from('fases').update({ position }).eq('id', id)))
+    revalidate(eventoId)
+}
+
 // ─── Temas ────────────────────────────────────────────────────────────────────
 
 export async function createTema(

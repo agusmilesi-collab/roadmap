@@ -4,7 +4,7 @@ import { useState, useEffect, useTransition, useRef } from 'react'
 import { DragDropContext, Droppable, Draggable, type DropResult, type DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
 import type { Fase, Tema, Tarea, Acuerdo } from './EventoDetailClient'
 import {
-    createFase, updateFase, deleteFase,
+    createFase, updateFase, deleteFase, reorderFases,
     createTema, updateTema, deleteTema, reorderTemas,
     createTarea, updateTarea, deleteTarea, reorderTareas,
     createAcuerdo, deleteAcuerdo,
@@ -85,6 +85,18 @@ export function ProgresoTab({ fases: initialFases, eventoId }: { fases: Fase[]; 
         if (!destination) return
         if (destination.droppableId === source.droppableId && destination.index === source.index) return
 
+        if (type === 'FASE') {
+            const updated = Array.from(fases)
+            const [moved] = updated.splice(source.index, 1)
+            const newPos = computePosition(updated, destination.index)
+            updated.splice(destination.index, 0, { ...moved, position: newPos })
+            setFases(updated)
+            startReorder(async () => {
+                await reorderFases(eventoId, [{ id: moved.id, position: newPos }])
+            })
+            return
+        }
+
         if (type.startsWith('TEMA_')) {
             const faseId = source.droppableId
             if (destination.droppableId !== faseId) return // no cross-fase drag for now
@@ -138,16 +150,42 @@ export function ProgresoTab({ fases: initialFases, eventoId }: { fases: Fase[]; 
                     </div>
                 )}
 
-                {fases.map((fase, idx) => (
-                    <FaseCard
-                        key={fase.id}
-                        fase={fase}
-                        index={idx}
-                        eventoId={eventoId}
-                        expanded={expanded}
-                        onToggleExpand={toggleExpand}
-                    />
-                ))}
+                <Droppable droppableId="fases-list" type="FASE">
+                    {(provided) => (
+                        <div
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
+                        >
+                            {fases.map((fase, idx) => (
+                                <Draggable key={fase.id} draggableId={`fase-${fase.id}`} index={idx}>
+                                    {(drag, snap) => (
+                                        <div
+                                            ref={drag.innerRef}
+                                            {...drag.draggableProps}
+                                            style={{
+                                                ...drag.draggableProps.style,
+                                                opacity: snap.isDragging ? 0.9 : 1,
+                                                boxShadow: snap.isDragging ? '0 8px 24px rgba(0,0,0,0.12)' : undefined,
+                                                borderRadius: '16px',
+                                            }}
+                                        >
+                                            <FaseCard
+                                                fase={fase}
+                                                index={idx}
+                                                eventoId={eventoId}
+                                                expanded={expanded}
+                                                onToggleExpand={toggleExpand}
+                                                dragHandleProps={drag.dragHandleProps}
+                                            />
+                                        </div>
+                                    )}
+                                </Draggable>
+                            ))}
+                            {provided.placeholder}
+                        </div>
+                    )}
+                </Droppable>
 
                 <AddFaseRow eventoId={eventoId} fases={fases} />
             </div>
@@ -158,13 +196,14 @@ export function ProgresoTab({ fases: initialFases, eventoId }: { fases: Fase[]; 
 // ─── FaseCard ─────────────────────────────────────────────────────────────────
 
 function FaseCard({
-    fase, index, eventoId, expanded, onToggleExpand,
+    fase, index, eventoId, expanded, onToggleExpand, dragHandleProps,
 }: {
     fase: Fase
     index: number
     eventoId: string
     expanded: Set<string>
     onToggleExpand: (id: string) => void
+    dragHandleProps?: DraggableProvidedDragHandleProps | null
 }) {
     const [editingNombre, setEditingNombre] = useState(false)
     const [editingDesc, setEditingDesc] = useState(false)
@@ -207,6 +246,7 @@ function FaseCard({
     return (
         <div style={st.fase}>
             <div style={st.faseHeader}>
+                <div {...(dragHandleProps as object)} style={st.faseDragHandle} title="Arrastrar para reordenar etapa">⠿</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={st.faseEyebrow}>Etapa {index + 1}</div>
                     {editingNombre ? (
@@ -862,6 +902,18 @@ const st: Record<string, React.CSSProperties> = {
         color: 'var(--color-text-muted)',
         fontSize: '1.2rem', lineHeight: 1, padding: '0.1rem 0.45rem',
         borderRadius: '4px',
+    },
+    faseDragHandle: {
+        cursor: 'grab',
+        fontSize: '1.1rem',
+        color: 'var(--color-text-muted)',
+        opacity: 0.4,
+        flexShrink: 0,
+        lineHeight: 1,
+        userSelect: 'none',
+        padding: '0.2rem 0.4rem',
+        alignSelf: 'flex-start',
+        marginTop: '0.2rem',
     },
     addFaseBtn: {
         padding: '0.85rem 1.25rem',
