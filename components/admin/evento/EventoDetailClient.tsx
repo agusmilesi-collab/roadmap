@@ -140,9 +140,10 @@ function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
                 })}
             </div>
             <div style={{ display: 'flex', gap: '3px' }}>
-                {fases.map((fase) => (
+                {fases.map((fase, idx) => (
                     <div
                         key={fase.id}
+                        title={fase.nombre}
                         style={{
                             flex: 1,
                             minWidth: 0,
@@ -153,9 +154,11 @@ function SegmentedProgressBar({ fases }: { fases: Fase[] }) {
                             fontSize: '0.65rem',
                             color: '#6B7280',
                             lineHeight: 1,
+                            fontFamily: 'var(--font-mono, monospace)',
+                            letterSpacing: '0.04em',
                         }}
                     >
-                        {fase.nombre}
+                        E{idx + 1}
                     </div>
                 ))}
             </div>

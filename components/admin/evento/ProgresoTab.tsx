@@ -376,10 +376,10 @@ function TemaRow({
 
     return (
         <div style={{ ...st.tema, borderBottom: '1px solid var(--color-border)' }}>
-            <div style={st.temaRow}>
+            <div className="tema-row-resp">
                 <div {...(dragHandleProps as object)} style={st.temaDragHandle} title="Arrastrar para reordenar">⠿</div>
 
-                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={(e) => {
+                <div className="tema-row-main" style={{ cursor: 'pointer' }} onClick={(e) => {
                     if (editingNombre || editingDesc) return
                     if ((e.target as HTMLElement).closest('button, input, textarea')) return
                     onToggle()
@@ -400,22 +400,24 @@ function TemaRow({
                     )}
                 </div>
 
-                <StatusPill estado={estado} pct={pct} />
+                <div className="tema-row-meta">
+                    <StatusPill estado={estado} pct={pct} />
 
-                <button onClick={onToggle} style={st.chevronBtn} title={isExpanded ? 'Colapsar' : 'Expandir'}>
-                    <svg style={{ ...st.chevron, transform: isExpanded ? 'rotate(180deg)' : 'none' }} width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M6 9l6 6 6-6" />
-                    </svg>
-                </button>
+                    <button onClick={onToggle} style={st.chevronBtn} title={isExpanded ? 'Colapsar' : 'Expandir'}>
+                        <svg style={{ ...st.chevron, transform: isExpanded ? 'rotate(180deg)' : 'none' }} width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M6 9l6 6 6-6" />
+                        </svg>
+                    </button>
 
-                {confirmDelete ? (
-                    <div style={st.deleteConfirmInline}>
-                        <button onClick={handleDelete} style={st.confirmYesXs}>Sí</button>
-                        <button onClick={() => setConfirmDelete(false)} style={st.confirmNoXs}>No</button>
-                    </div>
-                ) : (
-                    <button onClick={() => setConfirmDelete(true)} style={st.temaDeleteBtn} title="Eliminar tema">×</button>
-                )}
+                    {confirmDelete ? (
+                        <div style={st.deleteConfirmInline}>
+                            <button onClick={handleDelete} style={st.confirmYesXs}>Sí</button>
+                            <button onClick={() => setConfirmDelete(false)} style={st.confirmNoXs}>No</button>
+                        </div>
+                    ) : (
+                        <button onClick={() => setConfirmDelete(true)} style={st.temaDeleteBtn} title="Eliminar tema">×</button>
+                    )}
+                </div>
             </div>
 
             {isExpanded && (

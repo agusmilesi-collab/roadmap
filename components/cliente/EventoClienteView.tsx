@@ -177,9 +177,13 @@ export function EventoClienteView({ evento }: { evento: EventoCliente }) {
                                 })}
                             </div>
                             <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
-                                {evento.fases.map((fase) => (
-                                    <div key={fase.id} style={{ flex: 1, minWidth: 0, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.62rem', color: '#6B7280', lineHeight: 1 }}>
-                                        {fase.nombre}
+                                {evento.fases.map((fase, idx) => (
+                                    <div
+                                        key={fase.id}
+                                        title={fase.nombre}
+                                        style={{ flex: 1, minWidth: 0, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.62rem', color: '#6B7280', lineHeight: 1, fontFamily: 'var(--font-mono, monospace)', letterSpacing: '0.04em' }}
+                                    >
+                                        E{idx + 1}
                                     </div>
                                 ))}
                             </div>

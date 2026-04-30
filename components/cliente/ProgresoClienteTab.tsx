@@ -96,15 +96,17 @@ function TemaRow({ tema }: { tema: Tema }) {
 
     return (
         <div style={st.tema}>
-            <div style={st.temaRow} onClick={() => setExpanded((v) => !v)}>
-                <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="tema-row-resp no-handle" style={{ cursor: 'pointer' }} onClick={() => setExpanded((v) => !v)}>
+                <div className="tema-row-main">
                     <div style={st.temaName}>{tema.nombre}</div>
                     {tema.descripcion && <div style={st.temaDesc}>{tema.descripcion}</div>}
                 </div>
-                <StatusPill estado={estado} pct={pct} />
-                <svg style={{ ...st.chevron, transform: expanded ? 'rotate(180deg)' : 'none' }} width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M6 9l6 6 6-6" />
-                </svg>
+                <div className="tema-row-meta">
+                    <StatusPill estado={estado} pct={pct} />
+                    <svg style={{ ...st.chevron, transform: expanded ? 'rotate(180deg)' : 'none' }} width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M6 9l6 6 6-6" />
+                    </svg>
+                </div>
             </div>
 
             {expanded && (

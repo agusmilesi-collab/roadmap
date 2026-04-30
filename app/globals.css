@@ -391,3 +391,51 @@ a:hover {
   .pago-details { flex: 1; }
   .pago-badge  { flex: none; }
 }
+
+/* ─── Tema row — responsive ──────────────────────────────────────────────────
+ *
+ * Mobile (< 560px): pill + chevron + delete bajan debajo de la descripción.
+ *   [handle?] [name + desc...........]
+ *   [meta: pill   chevron   delete]
+ *
+ * Desktop (≥ 560px): single flex row
+ *   [handle?] [name + desc..] [pill] [chevron] [delete]
+ */
+.tema-row-resp {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 0.85rem;
+  row-gap: 0.5rem;
+  padding: 1.1rem 0.5rem;
+  user-select: none;
+}
+.tema-row-resp.no-handle {
+  grid-template-columns: 1fr;
+}
+.tema-row-resp .tema-row-main {
+  min-width: 0;
+}
+.tema-row-resp .tema-row-meta {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 560px) {
+  .tema-row-resp,
+  .tema-row-resp.no-handle {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.85rem;
+  }
+  .tema-row-resp .tema-row-main {
+    flex: 1;
+  }
+  .tema-row-resp .tema-row-meta {
+    display: contents;
+  }
+}
