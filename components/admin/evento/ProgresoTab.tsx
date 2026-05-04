@@ -376,7 +376,7 @@ function TemaRow({
     }
 
     return (
-        <div style={{ ...st.tema, borderBottom: '1px solid var(--color-border)' }}>
+        <div style={{ ...st.tema, borderBottom: '1px solid #CFC8B0' }}>
             <div className="tema-row-resp">
                 <div {...(dragHandleProps as object)} style={st.temaDragHandle} title="Arrastrar para reordenar">⠿</div>
 
@@ -1250,7 +1250,7 @@ const st: Record<string, React.CSSProperties> = {
         letterSpacing: '0.12em',
         textTransform: 'uppercase',
         color: 'var(--color-text-muted)',
-        marginBottom: '0.85rem',
+        marginBottom: '0.65rem',
         display: 'flex', alignItems: 'center', gap: '0.5rem',
     },
     sectionDot: {

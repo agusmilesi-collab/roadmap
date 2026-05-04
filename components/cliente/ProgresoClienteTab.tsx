@@ -269,7 +269,7 @@ const st: Record<string, React.CSSProperties> = {
         whiteSpace: 'nowrap',
     },
     temasList: { display: 'flex', flexDirection: 'column' },
-    tema: { borderBottom: '1px solid var(--color-border)' },
+    tema: { borderBottom: '1px solid #CFC8B0' },
     temaRow: {
         display: 'grid',
         gridTemplateColumns: '1fr auto auto',
@@ -342,7 +342,7 @@ const st: Record<string, React.CSSProperties> = {
         letterSpacing: '0.12em',
         textTransform: 'uppercase',
         color: 'var(--color-text-muted)',
-        marginBottom: '0.85rem',
+        marginBottom: '0.65rem',
         display: 'flex', alignItems: 'center', gap: '0.5rem',
     },
     sectionDot: {
