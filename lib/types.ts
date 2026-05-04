@@ -54,6 +54,7 @@ export interface Tema {
     // joins
     tareas?: Tarea[]
     acuerdos?: Acuerdo[]
+    cotizaciones?: Cotizacion[]
 }
 
 export interface Tarea {
@@ -69,6 +70,15 @@ export interface Acuerdo {
     id: string
     tema_id: string
     texto: string
+    created_at: string
+}
+
+export interface Cotizacion {
+    id: string
+    tema_id: string
+    proveedor: string
+    link: string
+    position: number
     created_at: string
 }
 
@@ -161,6 +171,7 @@ export type Database = {
             temas:              { Row: Tema;             Insert: Omit<Tema, 'id' | 'created_at' | 'tareas' | 'acuerdos'>;           Update: Partial<Omit<Tema, 'id' | 'created_at' | 'tareas' | 'acuerdos'>> }
             tareas:             { Row: Tarea;            Insert: Omit<Tarea, 'id' | 'created_at'>;                                  Update: Partial<Omit<Tarea, 'id' | 'created_at'>> }
             acuerdos:           { Row: Acuerdo;          Insert: Omit<Acuerdo, 'id' | 'created_at'>;                                Update: Partial<Omit<Acuerdo, 'id' | 'created_at'>> }
+            cotizaciones:       { Row: Cotizacion;       Insert: Omit<Cotizacion, 'id' | 'created_at'>;                             Update: Partial<Omit<Cotizacion, 'id' | 'created_at'>> }
             rubros:             { Row: Rubro;            Insert: Omit<Rubro, 'id' | 'pagos'>;                                       Update: Partial<Omit<Rubro, 'id' | 'pagos'>> }
             pagos_proveedor:    { Row: PagoProveedor;    Insert: Omit<PagoProveedor, 'id' | 'created_at'>;                          Update: Partial<Omit<PagoProveedor, 'id' | 'created_at'>> }
             plantillas_fases:   { Row: PlantillaFase;    Insert: Omit<PlantillaFase, 'id' | 'created_at' | 'plantillas_temas'>;     Update: Partial<Omit<PlantillaFase, 'id' | 'created_at' | 'plantillas_temas'>> }

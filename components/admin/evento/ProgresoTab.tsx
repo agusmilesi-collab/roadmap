@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useTransition, useRef } from 'react'
 import { DragDropContext, Droppable, Draggable, type DropResult, type DraggableProvidedDragHandleProps } from '@hello-pangea/dnd'
-import type { Fase, Tema, Tarea, Acuerdo } from './EventoDetailClient'
+import type { Fase, Tema, Tarea, Acuerdo, Cotizacion } from './EventoDetailClient'
 import {
     createFase, updateFase, deleteFase, reorderFases,
     createTema, updateTema, deleteTema, reorderTemas,
     createTarea, updateTarea, deleteTarea, reorderTareas,
     createAcuerdo, deleteAcuerdo,
+    createCotizacion, updateCotizacion, deleteCotizacion,
 } from '@/app/(admin)/eventos/[id]/actions'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -432,10 +433,12 @@ function TemaRow({
 function TemaBody({ tema, eventoId, done }: { tema: Tema; eventoId: string; done: number }) {
     const [addingTarea, setAddingTarea] = useState(false)
     const [addingAcuerdo, setAddingAcuerdo] = useState(false)
+    const [addingCotizacion, setAddingCotizacion] = useState(false)
 
     return (
         <div style={st.temaBody}>
             <div style={st.sectionLabel}>
+                <span style={{ ...st.sectionDot, backgroundColor: 'var(--color-gold)' }} />
                 Tareas <span style={st.countTag}>{done} de {tema.tareas.length}</span>
             </div>
             <Droppable droppableId={tema.id} type={`TAREA_${tema.id}`}>
@@ -471,7 +474,36 @@ function TemaBody({ tema, eventoId, done }: { tema: Tema; eventoId: string; done
                 <button onClick={() => setAddingTarea(true)} style={st.addInlineSm}>+ Agregar tarea</button>
             )}
 
+            {tema.cotizaciones.length > 0 && (
+                <>
+                    <div style={{ ...st.sectionLabel, marginTop: '1.25rem' }}>
+                        <span style={{ ...st.sectionDot, backgroundColor: 'var(--color-gold)' }} />
+                        Cotizaciones <span style={st.countTag}>{tema.cotizaciones.length} {tema.cotizaciones.length === 1 ? 'presupuesto' : 'presupuestos'}</span>
+                    </div>
+                    {tema.cotizaciones.map((cot) => (
+                        <CotizacionRow key={cot.id} cotizacion={cot} eventoId={eventoId} />
+                    ))}
+                </>
+            )}
+            {addingCotizacion ? (
+                <div style={{ marginTop: tema.cotizaciones.length > 0 ? 0 : '0.85rem' }}>
+                    <AddCotizacionForm eventoId={eventoId} temaId={tema.id} onDone={() => setAddingCotizacion(false)} />
+                </div>
+            ) : (
+                <button
+                    onClick={() => setAddingCotizacion(true)}
+                    style={{
+                        ...st.addInlineSm,
+                        marginTop: tema.cotizaciones.length > 0 ? '0.4rem' : '0.85rem',
+                        opacity: tema.cotizaciones.length > 0 ? 1 : 0.7,
+                    }}
+                >
+                    + {tema.cotizaciones.length > 0 ? 'Agregar otra cotización' : 'Sumar cotización (opcional)'}
+                </button>
+            )}
+
             <div style={{ ...st.sectionLabel, marginTop: '1.25rem' }}>
+                <span style={{ ...st.sectionDot, backgroundColor: 'var(--color-gold)' }} />
                 Acuerdos <span style={st.countTag}>{tema.acuerdos.length} {tema.acuerdos.length === 1 ? 'registro' : 'registros'}</span>
             </div>
             {tema.acuerdos.length === 0 && (
@@ -522,8 +554,6 @@ function TareaItem({
         startTr(async () => { await deleteTarea(tarea.id, eventoId) })
     }
 
-    const estadoLabel = tarea.estado === 'completada' ? 'Completada' : tarea.estado === 'en_curso' ? 'En curso' : 'Pendiente'
-
     return (
         <div style={st.tarea} data-estado={tarea.estado}>
             <div {...(dragHandleProps as object)} style={st.tareaDragHandle} title="Arrastrar para reordenar">⠿</div>
@@ -554,7 +584,6 @@ function TareaItem({
                     {tarea.nombre}
                 </div>
             )}
-            <div style={st.tareaStatus}>{estadoLabel}</div>
             {confirmDelete ? (
                 <div style={st.deleteConfirmInline}>
                     <button onClick={handleDelete} style={st.confirmYesXs}>Sí</button>
@@ -589,6 +618,152 @@ function AcuerdoRow({ acuerdo, eventoId }: { acuerdo: Acuerdo; eventoId: string 
             ) : (
                 <button onClick={() => setConfirmDelete(true)} style={{ ...st.tareaDeleteBtn, marginLeft: 'auto' }} title="Eliminar acuerdo">×</button>
             )}
+        </div>
+    )
+}
+
+// ─── CotizacionRow ───────────────────────────────────────────────────────────
+
+function CotizacionRow({ cotizacion, eventoId }: { cotizacion: Cotizacion; eventoId: string }) {
+    const [confirmDelete, setConfirmDelete] = useState(false)
+    const [editingField, setEditingField] = useState<'proveedor' | 'link' | null>(null)
+    const [, startTr] = useTransition()
+
+    function handleDelete() {
+        startTr(async () => { await deleteCotizacion(cotizacion.id, eventoId) })
+    }
+
+    function saveProveedor(value: string) {
+        const v = value.trim()
+        if (!v || v === cotizacion.proveedor) { setEditingField(null); return }
+        startTr(async () => {
+            await updateCotizacion(cotizacion.id, eventoId, { proveedor: v })
+            setEditingField(null)
+        })
+    }
+    function saveLink(value: string) {
+        const v = value.trim()
+        if (!v || v === cotizacion.link) { setEditingField(null); return }
+        startTr(async () => {
+            await updateCotizacion(cotizacion.id, eventoId, { link: v })
+            setEditingField(null)
+        })
+    }
+
+    return (
+        <div style={st.cotizacion}>
+            <span style={st.cotizacionIcon} title="Cotización">📄</span>
+
+            {/* Proveedor + flecha (ambos en la misma celda 1fr) */}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+                {editingField === 'proveedor' ? (
+                    <InlineInput
+                        initial={cotizacion.proveedor}
+                        onSave={saveProveedor}
+                        onCancel={() => setEditingField(null)}
+                        fontSize="0.85rem"
+                        fontWeight={600}
+                    />
+                ) : editingField === 'link' ? (
+                    <InlineInput
+                        initial={cotizacion.link}
+                        onSave={saveLink}
+                        onCancel={() => setEditingField(null)}
+                        fontSize="0.78rem"
+                    />
+                ) : (
+                    <>
+                        <span
+                            style={{ ...st.cotizacionProveedor, cursor: 'pointer' }}
+                            onClick={() => setEditingField('proveedor')}
+                            title="Click para editar proveedor"
+                        >
+                            {cotizacion.proveedor}
+                        </span>
+                        <a
+                            href={cotizacion.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={st.cotizacionLink}
+                            title={`Ver presupuesto: ${cotizacion.link}`}
+                        >
+                            ↗
+                        </a>
+                    </>
+                )}
+            </span>
+
+            {/* Lápiz para editar link (sólo visible cuando NO está editando) */}
+            {editingField === null ? (
+                <button
+                    onClick={() => setEditingField('link')}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-faint)', padding: '0.15rem', fontSize: '0.7rem', lineHeight: 1 }}
+                    title="Editar link"
+                >
+                    ✎
+                </button>
+            ) : (
+                <span />
+            )}
+
+            {confirmDelete ? (
+                <div style={st.deleteConfirmInline}>
+                    <button onClick={handleDelete} style={st.confirmYesXs}>Sí</button>
+                    <button onClick={() => setConfirmDelete(false)} style={st.confirmNoXs}>No</button>
+                </div>
+            ) : (
+                <button onClick={() => setConfirmDelete(true)} style={{ ...st.tareaDeleteBtn, marginLeft: 'auto' }} title="Eliminar cotización">×</button>
+            )}
+        </div>
+    )
+}
+
+// ─── AddCotizacionForm ───────────────────────────────────────────────────────
+
+function AddCotizacionForm({ eventoId, temaId, onDone }: { eventoId: string; temaId: string; onDone: () => void }) {
+    const [proveedor, setProveedor] = useState('')
+    const [link, setLink] = useState('')
+    const [, startTr] = useTransition()
+    const ref = useRef<HTMLInputElement>(null)
+    useEffect(() => { ref.current?.focus() }, [])
+
+    function submit() {
+        const p = proveedor.trim()
+        const l = link.trim()
+        if (!p || !l) { onDone(); return }
+        startTr(async () => {
+            await createCotizacion(temaId, eventoId, { proveedor: p, link: l })
+            onDone()
+        })
+    }
+
+    return (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr auto', gap: '0.4rem', padding: '0.5rem 0', alignItems: 'center' }}>
+            <input
+                ref={ref}
+                value={proveedor}
+                onChange={(e) => setProveedor(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); submit() }
+                    else if (e.key === 'Escape') onDone()
+                }}
+                placeholder="Proveedor"
+                style={{ ...st.inlineInput, fontSize: '0.85rem' }}
+            />
+            <input
+                type="url"
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); submit() }
+                    else if (e.key === 'Escape') onDone()
+                }}
+                placeholder="https://link-al-presupuesto.com"
+                style={{ ...st.inlineInput, fontSize: '0.85rem' }}
+            />
+            <button onClick={submit} style={st.confirmYesXs} disabled={!proveedor.trim() || !link.trim()}>
+                Guardar
+            </button>
         </div>
     )
 }
@@ -1076,7 +1251,14 @@ const st: Record<string, React.CSSProperties> = {
         textTransform: 'uppercase',
         color: 'var(--color-text-muted)',
         marginBottom: '0.85rem',
-        display: 'flex', alignItems: 'baseline', gap: '0.6rem',
+        display: 'flex', alignItems: 'center', gap: '0.5rem',
+    },
+    sectionDot: {
+        display: 'inline-block',
+        width: 7,
+        height: 7,
+        borderRadius: '50%',
+        flexShrink: 0,
     },
     countTag: {
         fontFamily: 'var(--font-mono, monospace)',
@@ -1091,10 +1273,10 @@ const st: Record<string, React.CSSProperties> = {
     },
     tarea: {
         display: 'grid',
-        gridTemplateColumns: '0.85rem 1.2rem 1fr auto auto',
+        gridTemplateColumns: '0.85rem 1.2rem 1fr auto',
         gap: '0.6rem',
         alignItems: 'center',
-        padding: '0.55rem 0.4rem',
+        padding: '0.32rem 0.4rem',
         borderRadius: '6px',
     },
     tareaDragHandle: {
@@ -1156,11 +1338,11 @@ const st: Record<string, React.CSSProperties> = {
         display: 'grid',
         gridTemplateColumns: '60px 1fr auto',
         gap: '1rem',
-        padding: '0.75rem 0',
+        padding: '0.4rem 0 0.4rem 1.85rem',
         borderBottom: '1px solid var(--color-border)',
         fontSize: '0.875rem',
         color: 'var(--color-text)',
-        lineHeight: 1.55,
+        lineHeight: 1.4,
     },
     acuerdoDate: {
         fontFamily: 'var(--font-mono, monospace)',
@@ -1173,6 +1355,42 @@ const st: Record<string, React.CSSProperties> = {
         flexShrink: 0,
     },
     acuerdoText: { color: 'var(--color-text)' },
+    cotizacion: {
+        display: 'grid',
+        gridTemplateColumns: 'auto 1fr auto auto',
+        gap: '0.5rem',
+        padding: '0.32rem 0 0.32rem 1.85rem',
+        fontSize: '0.85rem',
+        alignItems: 'center',
+    },
+    cotizacionIcon: {
+        fontSize: '0.95rem',
+        opacity: 0.7,
+        lineHeight: 1,
+    },
+    cotizacionProveedor: {
+        fontWeight: 600,
+        color: 'var(--color-text)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        minWidth: 0,
+    },
+    cotizacionLink: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '22px',
+        height: '22px',
+        fontSize: '0.85rem',
+        color: 'var(--color-gold-dark)',
+        textDecoration: 'none',
+        borderRadius: '4px',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        transition: 'background 0.15s, color 0.15s',
+        lineHeight: 1,
+    },
     inlineInput: {
         width: '100%',
         background: 'var(--color-cream)',

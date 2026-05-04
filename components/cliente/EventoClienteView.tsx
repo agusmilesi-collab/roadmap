@@ -37,6 +37,7 @@ export interface EventoCliente {
                 position: number
             }[]
             acuerdos: { id: string; texto: string; created_at: string }[]
+            cotizaciones: { id: string; proveedor: string; link: string; position: number; created_at: string }[]
         }[]
     }[]
     rubros: {

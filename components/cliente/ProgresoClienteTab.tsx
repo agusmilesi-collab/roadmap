@@ -112,6 +112,7 @@ function TemaRow({ tema }: { tema: Tema }) {
             {expanded && (
                 <div style={st.temaBody}>
                     <div style={st.sectionLabel}>
+                        <span style={{ ...st.sectionDot, backgroundColor: 'var(--color-gold)' }} />
                         Tareas <span style={st.countTag}>{done} de {tema.tareas.length}</span>
                     </div>
                     <div style={st.tareasTimeline}>
@@ -120,9 +121,30 @@ function TemaRow({ tema }: { tema: Tema }) {
                         ))}
                     </div>
 
+                    {tema.cotizaciones.length > 0 && (
+                        <>
+                            <div style={{ ...st.sectionLabel, marginTop: '1.25rem' }}>
+                                <span style={{ ...st.sectionDot, backgroundColor: 'var(--color-gold)' }} />
+                                Cotizaciones <span style={st.countTag}>{tema.cotizaciones.length} {tema.cotizaciones.length === 1 ? 'presupuesto' : 'presupuestos'}</span>
+                            </div>
+                            {tema.cotizaciones.map((cot) => (
+                                <div key={cot.id} style={st.cotizacion}>
+                                    <span style={st.cotizacionIcon}>📄</span>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+                                        <span style={st.cotizacionProveedor}>{cot.proveedor}</span>
+                                        <a href={cot.link} target="_blank" rel="noopener noreferrer" style={st.cotizacionLink} title={`Ver presupuesto: ${cot.link}`}>
+                                            ↗
+                                        </a>
+                                    </span>
+                                </div>
+                            ))}
+                        </>
+                    )}
+
                     {tema.acuerdos.length > 0 && (
                         <>
                             <div style={{ ...st.sectionLabel, marginTop: '1.25rem' }}>
+                                <span style={{ ...st.sectionDot, backgroundColor: 'var(--color-gold)' }} />
                                 Acuerdos <span style={st.countTag}>{tema.acuerdos.length} {tema.acuerdos.length === 1 ? 'registro' : 'registros'}</span>
                             </div>
                             {tema.acuerdos.map((acuerdo) => (
@@ -142,7 +164,6 @@ function TemaRow({ tema }: { tema: Tema }) {
 // ─── TareaItem ────────────────────────────────────────────────────────────────
 
 function TareaItem({ tarea }: { tarea: Tarea }) {
-    const estadoLabel = tarea.estado === 'completada' ? 'Completada' : tarea.estado === 'en_curso' ? 'En curso' : 'Pendiente'
     return (
         <div style={st.tarea} data-estado={tarea.estado}>
             <span
@@ -151,6 +172,7 @@ function TareaItem({ tarea }: { tarea: Tarea }) {
                     ...(tarea.estado === 'en_curso' ? st.tareaNodeEnCurso : {}),
                     ...(tarea.estado === 'completada' ? st.tareaNodeCompletada : {}),
                 }}
+                title={tarea.estado === 'completada' ? 'Completada' : tarea.estado === 'en_curso' ? 'En curso' : 'Pendiente'}
             >
                 {tarea.estado === 'en_curso' && <span style={st.tareaNodeDot} />}
                 {tarea.estado === 'completada' && <span style={st.tareaNodeCheck}>✓</span>}
@@ -163,7 +185,6 @@ function TareaItem({ tarea }: { tarea: Tarea }) {
             >
                 {tarea.nombre}
             </div>
-            <div style={st.tareaStatus}>{estadoLabel}</div>
         </div>
     )
 }
@@ -322,7 +343,14 @@ const st: Record<string, React.CSSProperties> = {
         textTransform: 'uppercase',
         color: 'var(--color-text-muted)',
         marginBottom: '0.85rem',
-        display: 'flex', alignItems: 'baseline', gap: '0.6rem',
+        display: 'flex', alignItems: 'center', gap: '0.5rem',
+    },
+    sectionDot: {
+        display: 'inline-block',
+        width: 7,
+        height: 7,
+        borderRadius: '50%',
+        flexShrink: 0,
     },
     countTag: {
         fontFamily: 'var(--font-mono, monospace)',
@@ -335,10 +363,10 @@ const st: Record<string, React.CSSProperties> = {
     tareasTimeline: { position: 'relative' },
     tarea: {
         display: 'grid',
-        gridTemplateColumns: '1.2rem 1fr auto',
+        gridTemplateColumns: '1.2rem 1fr',
         gap: '0.85rem',
         alignItems: 'center',
-        padding: '0.55rem 0.4rem',
+        padding: '0.32rem 0.4rem',
         borderRadius: '6px',
     },
     tareaNode: {
@@ -384,11 +412,11 @@ const st: Record<string, React.CSSProperties> = {
         display: 'grid',
         gridTemplateColumns: '60px 1fr',
         gap: '1rem',
-        padding: '0.75rem 0',
+        padding: '0.4rem 0 0.4rem 1.85rem',
         borderBottom: '1px solid var(--color-border)',
         fontSize: '0.875rem',
         color: 'var(--color-text)',
-        lineHeight: 1.55,
+        lineHeight: 1.4,
     },
     acuerdoDate: {
         fontFamily: 'var(--font-mono, monospace)',
@@ -400,4 +428,39 @@ const st: Record<string, React.CSSProperties> = {
         paddingTop: '0.2rem',
     },
     acuerdoText: { color: 'var(--color-text)' },
+    cotizacion: {
+        display: 'grid',
+        gridTemplateColumns: 'auto 1fr',
+        gap: '0.5rem',
+        padding: '0.32rem 0 0.32rem 1.85rem',
+        fontSize: '0.85rem',
+        alignItems: 'center',
+    },
+    cotizacionIcon: {
+        fontSize: '0.95rem',
+        opacity: 0.7,
+        lineHeight: 1,
+    },
+    cotizacionProveedor: {
+        fontWeight: 600,
+        color: 'var(--color-text)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        minWidth: 0,
+    },
+    cotizacionLink: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '22px',
+        height: '22px',
+        fontSize: '0.85rem',
+        color: 'var(--color-gold-dark)',
+        textDecoration: 'none',
+        borderRadius: '4px',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        lineHeight: 1,
+    },
 }

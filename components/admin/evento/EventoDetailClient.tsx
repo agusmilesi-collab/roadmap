@@ -15,6 +15,14 @@ export interface Acuerdo {
     created_at: string
 }
 
+export interface Cotizacion {
+    id: string
+    proveedor: string
+    link: string
+    position: number
+    created_at: string
+}
+
 export interface Tarea {
     id: string
     nombre: string
@@ -29,6 +37,7 @@ export interface Tema {
     position: number
     tareas: Tarea[]
     acuerdos: Acuerdo[]
+    cotizaciones: Cotizacion[]
 }
 
 export interface Fase {

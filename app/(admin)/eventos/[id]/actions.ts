@@ -202,6 +202,61 @@ export async function deleteAcuerdo(id: string, eventoId: string) {
     revalidate(eventoId)
 }
 
+// ─── Cotizaciones ─────────────────────────────────────────────────────────────
+
+function normalizeUrl(raw: string): string {
+    const t = raw.trim()
+    if (!t) return ''
+    if (/^https?:\/\//i.test(t)) return t
+    return 'https://' + t
+}
+
+export async function createCotizacion(
+    temaId: string,
+    eventoId: string,
+    data: { proveedor: string; link: string }
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    const { data: last } = await db
+        .from('cotizaciones')
+        .select('position')
+        .eq('tema_id', temaId)
+        .order('position', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    await db.from('cotizaciones').insert({
+        tema_id: temaId,
+        proveedor: data.proveedor.trim(),
+        link: normalizeUrl(data.link),
+        position: (last?.position ?? 0) + 1,
+    })
+    revalidate(eventoId)
+}
+
+export async function updateCotizacion(
+    id: string,
+    eventoId: string,
+    data: Partial<{ proveedor: string; link: string }>
+) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    const patch: Record<string, string> = {}
+    if (data.proveedor != null) patch.proveedor = data.proveedor.trim()
+    if (data.link != null) patch.link = normalizeUrl(data.link)
+    await db.from('cotizaciones').update(patch).eq('id', id)
+    revalidate(eventoId)
+}
+
+export async function deleteCotizacion(id: string, eventoId: string) {
+    const supabase = await createServerSupabaseClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('cotizaciones').delete().eq('id', id)
+    revalidate(eventoId)
+}
+
 // ─── Rubros ───────────────────────────────────────────────────────────────────
 
 export async function createRubro(eventoId: string, nombre: string) {

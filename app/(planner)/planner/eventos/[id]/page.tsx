@@ -43,7 +43,8 @@ export default async function PlannerEventoPage({ params }: Props) {
         temas (
           id, nombre, descripcion, position,
           tareas ( id, nombre, estado, position ),
-          acuerdos ( id, texto, created_at )
+          acuerdos ( id, texto, created_at ),
+          cotizaciones ( id, proveedor, link, position, created_at )
         )
       ),
       rubros (
@@ -73,6 +74,7 @@ export default async function PlannerEventoPage({ params }: Props) {
                 position: number
                 tareas: { id: string; nombre: string; estado: string; position: number }[]
                 acuerdos: { id: string; texto: string; created_at: string }[]
+                cotizaciones: { id: string; proveedor: string; link: string; position: number; created_at: string }[]
             }[]
         }[]
         rubros: {
@@ -110,6 +112,7 @@ export default async function PlannerEventoPage({ params }: Props) {
                 acuerdos: [...(t.acuerdos ?? [])].sort(
                     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                 ),
+                cotizaciones: [...(t.cotizaciones ?? [])].sort((a, b) => a.position - b.position),
             })),
     }))
 
