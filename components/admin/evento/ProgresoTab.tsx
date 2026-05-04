@@ -1339,7 +1339,6 @@ const st: Record<string, React.CSSProperties> = {
         gridTemplateColumns: '60px 1fr auto',
         gap: '1rem',
         padding: '0.4rem 0 0.4rem 1.85rem',
-        borderBottom: '1px solid var(--color-border)',
         fontSize: '0.875rem',
         color: 'var(--color-text)',
         lineHeight: 1.4,
