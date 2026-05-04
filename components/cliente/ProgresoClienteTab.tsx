@@ -333,7 +333,7 @@ const st: Record<string, React.CSSProperties> = {
         color: '#4B7C5C',
     },
     temaBody: {
-        padding: '0.5rem 0.5rem 1.5rem 1.75rem',
+        padding: '0.5rem 0.5rem 2.25rem 1.75rem',
     },
     sectionLabel: {
         fontFamily: 'var(--font-mono, monospace)',
