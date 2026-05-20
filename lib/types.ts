@@ -161,6 +161,63 @@ export interface PlantillaRubro {
     orden: number
 }
 
+// ─── Simulador ───────────────────────────────────────────────────────────────
+
+export type TipoRubroSimulador = 'fijo' | 'var'
+
+export interface SimuladorRubro {
+    id: string
+    nombre: string
+    tipo: TipoRubroSimulador
+    opcional: boolean
+    orden: number
+    created_at: string
+    updated_at: string
+    // joins
+    proveedores?: SimuladorProveedor[]
+}
+
+export interface SimuladorProveedor {
+    id: string
+    rubro_id: string
+    nombre: string
+    precio: number
+    descripcion: string | null
+    orden: number
+    created_at: string
+    updated_at: string
+}
+
+export interface Simulador {
+    id: string
+    nombre: string
+    created_at: string
+    updated_at: string
+    // joins
+    variantes?: SimuladorVariante[]
+}
+
+export interface SimuladorVariante {
+    id: string
+    simulador_id: string
+    nombre: string
+    cantidad_invitados: number
+    orden: number
+    created_at: string
+    updated_at: string
+    // joins
+    items?: SimuladorItem[]
+}
+
+export interface SimuladorItem {
+    id: string
+    variante_id: string
+    rubro_id: string
+    proveedor_id: string | null
+    incluido: boolean
+    created_at: string
+}
+
 // ─── Database shape for createBrowserClient<Database> ───────────────────────
 export type Database = {
     public: {
@@ -177,7 +234,12 @@ export type Database = {
             plantillas_fases:   { Row: PlantillaFase;    Insert: Omit<PlantillaFase, 'id' | 'created_at' | 'plantillas_temas'>;     Update: Partial<Omit<PlantillaFase, 'id' | 'created_at' | 'plantillas_temas'>> }
             plantillas_temas:   { Row: PlantillaTema;    Insert: Omit<PlantillaTema, 'id' | 'created_at' | 'plantillas_tareas'>;    Update: Partial<Omit<PlantillaTema, 'id' | 'created_at' | 'plantillas_tareas'>> }
             plantillas_tareas:  { Row: PlantillaTarea;   Insert: Omit<PlantillaTarea, 'id' | 'created_at'>;                         Update: Partial<Omit<PlantillaTarea, 'id' | 'created_at'>> }
-            plantillas_rubros:  { Row: PlantillaRubro;   Insert: Omit<PlantillaRubro, 'id'>;                                        Update: Partial<Omit<PlantillaRubro, 'id'>> }
+            plantillas_rubros:     { Row: PlantillaRubro;      Insert: Omit<PlantillaRubro, 'id'>;                                      Update: Partial<Omit<PlantillaRubro, 'id'>> }
+            simulador_rubros:      { Row: SimuladorRubro;      Insert: Omit<SimuladorRubro, 'id' | 'created_at' | 'updated_at' | 'proveedores'>; Update: Partial<Omit<SimuladorRubro, 'id' | 'created_at' | 'proveedores'>> }
+            simulador_proveedores: { Row: SimuladorProveedor;  Insert: Omit<SimuladorProveedor, 'id' | 'created_at' | 'updated_at'>;                Update: Partial<Omit<SimuladorProveedor, 'id' | 'created_at'>> }
+            simuladores:           { Row: Simulador;           Insert: Omit<Simulador, 'id' | 'created_at' | 'updated_at' | 'variantes'>; Update: Partial<Omit<Simulador, 'id' | 'created_at' | 'variantes'>> }
+            simulador_variantes:   { Row: SimuladorVariante;   Insert: Omit<SimuladorVariante, 'id' | 'created_at' | 'updated_at' | 'items'>; Update: Partial<Omit<SimuladorVariante, 'id' | 'created_at' | 'items'>> }
+            simulador_items:       { Row: SimuladorItem;       Insert: Omit<SimuladorItem, 'id' | 'created_at'>;                       Update: Partial<Omit<SimuladorItem, 'id' | 'created_at'>> }
         }
         Views: Record<string, never>
         Functions: Record<string, never>
